@@ -2,6 +2,7 @@
 import logging
 import time as clock
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from mt5bot.config import Settings
 from mt5bot.core.indicators import atr
@@ -17,6 +18,10 @@ log = logging.getLogger("mt5bot")
 
 # El ciclo no se alinea al reloj local: la hora del servidor tiene otro huso y las velas H4 quedarían desfasadas.
 POLL_SECONDS = 60
+
+
+def heartbeat_path(settings: Settings) -> Path:
+    return settings.bot.journal_path.with_suffix(".heartbeat")
 
 
 class Bot:
@@ -43,6 +48,8 @@ class Bot:
                 except Mt5Error as error:
                     log.error("%s: %s", symbol, error)
                     self.journal.log("error", {"message": str(error)}, symbol)
+            # Latido para el panel: las señales pueden tardar días, el latido dice si el bot sigue vivo.
+            heartbeat_path(self.settings).write_text(datetime.now().isoformat(timespec="seconds"), encoding="utf-8")
             self._sleep(POLL_SECONDS)
         self._flatten_all("kill switch")
 

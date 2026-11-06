@@ -55,6 +55,18 @@ class Journal:
         row = self.db.execute("SELECT initial_stop FROM positions WHERE ticket = ?", (ticket,)).fetchone()
         return row[0] if row else None
 
+    def positions_info(self) -> dict[int, dict]:
+        """Riesgo y stop inicial de cada posición que abrió el bot, por ticket."""
+        rows = self.db.execute("SELECT ticket, symbol, side, entry, initial_stop, risk_money, opened_at FROM positions")
+        return {t: {"symbol": s, "side": side, "entry": e, "initial_stop": st, "risk_money": r, "opened_at": o}
+                for t, s, side, e, st, r, o in rows}
+
+    def recent_events(self, limit: int) -> list[dict]:
+        rows = self.db.execute("SELECT logged_at, server_time, symbol, kind, detail FROM events ORDER BY id DESC LIMIT ?",
+                               (limit,))
+        return [{"logged_at": la, "server_time": st, "symbol": s, "kind": k, "detail": json.loads(d)}
+                for la, st, s, k, d in rows]
+
     def opened_at(self, ticket: int) -> datetime | None:
         row = self.db.execute("SELECT opened_at FROM positions WHERE ticket = ?", (ticket,)).fetchone()
         return datetime.fromisoformat(row[0]) if row else None

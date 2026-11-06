@@ -76,6 +76,10 @@ class BacktestConfig:
     commission_per_lot: float
     monte_carlo_runs: int
     seed: int
+    # Resultado del backtest, para comparar contra la demo en el panel.
+    expected_win_rate_pct: float
+    expected_avg_r: float
+    expected_trades_per_month: float
 
 
 @dataclass(frozen=True)

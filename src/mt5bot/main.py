@@ -70,6 +70,59 @@ def cmd_backtest(args) -> None:
     print(json.dumps(report, indent=2, ensure_ascii=False))
 
 
+BOT_TITLES = {"donchian": "Bot Donchian · seguir tendencias", "rsi2": "Bot RSI2 · comprar caídas en índices",
+              "orb": "Bot ORB · ruptura del rango de apertura"}
+PANEL_PATH = Path.home() / ".mt5bot" / "panel.html"
+
+
+def bot_view(gateway, settings):
+    """Lee lo que necesita el panel de un bot: bitácora, latido, historial de MT5 y posiciones abiertas."""
+    from mt5bot.engine import heartbeat_path
+    from mt5bot.io.journal import Journal
+    from mt5bot.report import BotView, closed_trades, liveness
+
+    journal = Journal(settings.bot.journal_path)
+    try:
+        info, events = journal.positions_info(), journal.recent_events(12)
+    finally:
+        journal.close()
+    beat_file = heartbeat_path(settings)
+    last_beat = datetime.fromisoformat(beat_file.read_text(encoding="utf-8")) if beat_file.exists() else None
+    magic = settings.bot.magic
+    open_positions = []
+    for p in gateway.positions(magic):
+        buy = gateway.position_is_buy(p)
+        _, bid, ask = gateway.quote(p.symbol)
+        now_price, initial = (bid if buy else ask), info.get(p.ticket, {}).get("initial_stop")
+        r = (now_price - p.price_open) * (1 if buy else -1) / abs(p.price_open - initial) if initial else None
+        open_positions.append({"symbol": p.symbol, "side": "buy" if buy else "sell", "volume": p.volume,
+                               "price_open": p.price_open, "price_now": now_price, "sl": p.sl,
+                               "profit": p.profit + p.swap, "r": r})
+    bot, strategy = settings.bot, settings.strategy
+    return BotView(
+        name=BOT_TITLES.get(strategy.name, strategy.name),
+        description=f"{bot.timeframe} · {', '.join(bot.symbols)} · magic {magic} · modo {bot.mode} en el archivo",
+        expected=settings.backtest,
+        trades=closed_trades(gateway.bot_deals(magic, datetime.now() - timedelta(days=400)), info),
+        open_positions=open_positions, events=events, status=liveness(last_beat, datetime.now()),
+    )
+
+
+def cmd_panel(args) -> None:
+    from mt5bot.report import render
+
+    gateway = connected_gateway()
+    try:
+        balance, equity = gateway.balance_and_equity()
+        bots = [bot_view(gateway, load_settings(path)) for path in args.configs]
+    finally:
+        gateway.shutdown()
+    PANEL_PATH.write_text(render(bots, balance, equity, datetime.now()), encoding="utf-8")
+    print(f"panel guardado en {PANEL_PATH}")
+    if not args.no_open:
+        os.startfile(PANEL_PATH)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="mt5bot")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
@@ -90,6 +143,12 @@ def main() -> None:
     backtest.add_argument("--csv", type=Path, required=True)
     backtest.add_argument("--spec", type=Path, required=True)
     backtest.set_defaults(func=cmd_backtest)
+
+    panel = commands.add_parser("panel", help="genera el panel HTML de los bots y lo abre en el navegador")
+    panel.add_argument("--configs", type=Path, nargs="+",
+                       default=[Path("config/settings.toml"), Path("config/rsi2.toml")])
+    panel.add_argument("--no-open", action="store_true", help="solo genera el archivo")
+    panel.set_defaults(func=cmd_panel)
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

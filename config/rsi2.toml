@@ -55,3 +55,7 @@ spread_points = 2
 commission_per_lot = 10.0
 monte_carlo_runs = 10000
 seed = 19
+# Backtest con costos y swap (2025-09 a 2026-11, 47 ops): referencia del panel.
+expected_win_rate_pct = 78.7
+expected_avg_r = 0.180
+expected_trades_per_month = 4

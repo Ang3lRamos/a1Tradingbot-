@@ -57,6 +57,10 @@ cartera (posiciones abiertas entre símbolos).
 - `config/rsi2.toml`: RSI2 D1 en US500/US100/US30, magic 260512, bitácora `~/.mt5bot/journal_rsi2.db`, mantiene
   posiciones el fin de semana (`friday_close = ""`). Tarea "mt5bot-rsi2". DE40 fuera por spread a medianoche.
 - Un solo archivo `STOP` detiene a los dos. Nunca usar `STOP` para pruebas: cierra posiciones reales del bot.
+  Para reiniciar un bot con código nuevo: matar su proceso python; su lanzador lo relanza en ~1 min.
+- Cada bot escribe un latido por vuelta (`<bitácora>.heartbeat`); el panel lo usa para saber si sigue vivo.
+- `report.py` arma el panel; las operaciones cerradas salen de `history_deals` de MT5 (incluye salidas por SL/TP
+  del servidor) y el R usa el `risk_money` de la bitácora. Referencias del backtest en `[backtest] expected_*`.
 
 ## Detalles de MT5 que importan
 
@@ -71,7 +75,7 @@ cartera (posiciones abiertas entre símbolos).
 
 ```bash
 pip install -e ".[mt5,dev]"     # en Windows; en Linux/Mac sin [mt5]
-pytest -p no:cacheprovider     # 58 tests, corren sin MT5 (FakeGateway en tests/test_engine.py)
+pytest -p no:cacheprovider     # 66 tests, corren sin MT5 (FakeGateway en tests/test_engine.py)
 mt5bot download --symbol EURUSD.z --timeframe H4 --days 730
 mt5bot backtest --csv data/EURUSD.z_H4.csv --spec data/EURUSD.z_spec.json
 mt5bot run                      # respeta bot.mode (dry_run por defecto)
@@ -80,6 +84,8 @@ scripts/start_bot.ps1 [-Config config\rsi2.toml]
                                 # abre MT5, keep_awake y el bot en live; lo reinicia si se cae (salvo con STOP).
                                 # Lo lanzan las tareas programadas "mt5bot" y "mt5bot-rsi2" al iniciar sesión.
 scripts/keep_awake.ps1          # evita suspensión de equipo y pantalla mientras corre
+mt5bot panel                    # (o scripts/panel.ps1) genera ~/.mt5bot/panel.html y lo abre: estado por latido,
+                                # posiciones, operaciones cerradas desde el historial de MT5 vs backtest, eventos
 ```
 
 Bitácora y logs fuera de OneDrive (la sincronización bloquea SQLite): `~/.mt5bot/journal.db` y `~/.mt5bot/logs/`.

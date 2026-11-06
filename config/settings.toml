@@ -58,3 +58,7 @@ spread_points = 2              # piso; se usa el spread de la vela si es mayor
 commission_per_lot = 10.0      # ida y vuelta, en moneda de la cuenta (medido en GNT demo)
 monte_carlo_runs = 10000
 seed = 19
+# Backtest con costos y swap (2025-04 a 2026-11, 744 ops): referencia del panel.
+expected_win_rate_pct = 41.0
+expected_avg_r = -0.038
+expected_trades_per_month = 40

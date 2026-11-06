@@ -98,6 +98,20 @@ class Mt5Gateway:
         entries = sum(1 for d in ours if d.entry == self.mt5.DEAL_ENTRY_IN)
         return realized, entries
 
+    def bot_deals(self, magic: int, since: datetime) -> list[dict]:
+        """Deals de las posiciones que abrió el bot, incluidas las salidas por SL/TP que ejecuta el servidor.
+
+        Se buscan las posiciones por su deal de entrada con el magic del bot y luego todos sus deals,
+        porque el broker no siempre copia el magic en el deal de salida.
+        """
+        found = self.mt5.history_deals_get(since, datetime.now() + timedelta(days=2)) or ()
+        ours = {d.position_id for d in found if d.magic == magic and d.entry == self.mt5.DEAL_ENTRY_IN}
+        return [{
+            "position": d.position_id, "symbol": d.symbol, "time": _naive_server_time(d.time),
+            "entry": d.entry == self.mt5.DEAL_ENTRY_IN, "side": "buy" if d.type == self.mt5.DEAL_TYPE_BUY else "sell",
+            "price": d.price, "volume": d.volume, "money": d.profit + d.commission + d.swap + d.fee,
+        } for d in found if d.position_id in ours]
+
     def send_market_order(self, plan: OrderPlan, magic: int, comment: str):
         signal = plan.signal
         is_buy = signal.side == "buy"
