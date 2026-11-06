@@ -3,6 +3,7 @@
 # al iniciar sesión; también se puede correr a mano: .\scripts\start_bot.ps1 -Config config\rsi2.toml
 # - Abre MT5 de GNT si no está abierto y espera a que conecte con Algo Trading activo.
 # - Lanza keep_awake.ps1 para que el equipo y la pantalla no se suspendan.
+# - Lanza el vigilante del panel (mt5bot panel --watch), que renueva ~\.mt5bot\panel.html cada pocos minutos.
 # - Corre el bot en live y lo reinicia si se cae. Si existe el archivo STOP no lo reinicia:
 #   el kill switch manda (detiene a todos los bots). Para volver a arrancar, borra STOP y corre este script.
 param([string]$Config = "config\settings.toml")
@@ -14,6 +15,7 @@ $logDir   = "$env:USERPROFILE\.mt5bot\logs"
 $stopFile = Join-Path $project "STOP"
 $botName  = [IO.Path]::GetFileNameWithoutExtension($Config)
 $retrySeconds = 60
+$panelMinutes = 5
 
 New-Item -ItemType Directory -Force $logDir | Out-Null
 Set-Location $project
@@ -69,6 +71,14 @@ if (-not (Test-ProcessRunning "powershell.exe" "*keep_awake.ps1*")) {
     Start-Process powershell.exe -WindowStyle Minimized -ArgumentList @(
         "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSScriptRoot\keep_awake.ps1`"")
     Write-Log "keep_awake iniciado"
+}
+
+if (-not (Test-ProcessRunning "python.exe" "*mt5bot.main panel*--watch*")) {
+    # Solo lee datos. Si MT5 aún no conecta, lo anota en panel.log y reintenta en el siguiente ciclo.
+    Start-Process $python -WindowStyle Hidden -WorkingDirectory $project `
+        -ArgumentList @("-m", "mt5bot.main", "panel", "--watch", "$panelMinutes", "--no-open") `
+        -RedirectStandardError (Join-Path $logDir "panel.log")
+    Write-Log "vigilante del panel iniciado (cada $panelMinutes min)"
 }
 
 if (-not (Get-Process terminal64 -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $terminal })) {

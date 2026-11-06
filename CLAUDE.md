@@ -86,6 +86,8 @@ scripts/start_bot.ps1 [-Config config\rsi2.toml]
 scripts/keep_awake.ps1          # evita suspensión de equipo y pantalla mientras corre
 mt5bot panel                    # (o scripts/panel.ps1) genera ~/.mt5bot/panel.html y lo abre: estado por latido,
                                 # posiciones, operaciones cerradas desde el historial de MT5 vs backtest, eventos
+mt5bot panel --watch 5 --no-open  # vigilante: lo regenera cada 5 min hasta que exista STOP; lo lanza start_bot.ps1
+                                # (log en ~/.mt5bot/logs/panel.log). La página se recarga sola cada minuto.
 ```
 
 Bitácora y logs fuera de OneDrive (la sincronización bloquea SQLite): `~/.mt5bot/journal.db` y `~/.mt5bot/logs/`.

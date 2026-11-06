@@ -9,6 +9,7 @@ from html import escape
 from mt5bot.config import BacktestConfig
 
 MIN_TRADES_TO_COMPARE = 30
+REFRESH_SECONDS = 60  # el navegador recarga el archivo; el vigilante lo regenera cada pocos minutos
 EVENT_LABELS = {"signal": "Señal", "dry_run": "Simulada", "order_sent": "Orden enviada", "blocked": "Bloqueada",
                 "skipped": "Descartada", "closed": "Cerrada", "stop_moved": "Stop movido", "error": "Error"}
 
@@ -170,9 +171,11 @@ def render(bots: list[BotView], balance: float, equity: float, generated_at: dat
     sections = "".join(_bot_section(bot) for bot in bots)
     return f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Panel mt5bot</title>
+<meta http-equiv="refresh" content="{REFRESH_SECONDS}">
 <style>{STYLE}</style></head><body><main>
 <header class="top"><h1>Panel mt5bot</h1>
-<p class="muted">Cuenta demo GNT · generado {generated_at:%d/%m/%Y %H:%M} (hora de tu PC) · para actualizar, vuelve a correr el panel</p>
+<p class="muted">Cuenta demo GNT · datos de las {generated_at:%H:%M} del {generated_at:%d/%m/%Y} (hora de tu PC) ·
+la página se recarga sola cada minuto; los datos se renuevan cada 5 minutos mientras los bots corren</p>
 <div class="stats"><div><span class="k">Balance</span><span class="v">{balance:,.2f}</span></div>
 <div><span class="k">Equidad</span><span class="v">{equity:,.2f}</span></div>
 <div><span class="k">Flotante</span><span class="v">{_money(equity - balance)}</span></div></div></header>

@@ -2,6 +2,7 @@ import argparse
 import json
 import logging
 import os
+import time
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -108,19 +109,38 @@ def bot_view(gateway, settings):
     )
 
 
-def cmd_panel(args) -> None:
+def write_panel(configs: list[Path]) -> None:
     from mt5bot.report import render
 
     gateway = connected_gateway()
     try:
         balance, equity = gateway.balance_and_equity()
-        bots = [bot_view(gateway, load_settings(path)) for path in args.configs]
+        bots = [bot_view(gateway, load_settings(path)) for path in configs]
     finally:
         gateway.shutdown()
     PANEL_PATH.write_text(render(bots, balance, equity, datetime.now()), encoding="utf-8")
-    print(f"panel guardado en {PANEL_PATH}")
-    if not args.no_open:
-        os.startfile(PANEL_PATH)
+
+
+def cmd_panel(args) -> None:
+    from mt5bot.io.mt5_gateway import Mt5Error
+
+    if not args.watch:
+        write_panel(args.configs)
+        print(f"panel guardado en {PANEL_PATH}")
+        if not args.no_open:
+            os.startfile(PANEL_PATH)
+        return
+    # Modo vigilante: regenera cada `watch` minutos hasta que aparezca STOP (el mismo kill switch de los bots).
+    opened = args.no_open
+    while not Path("STOP").exists():
+        try:
+            write_panel(args.configs)
+        except Mt5Error as error:
+            logging.getLogger("mt5bot").error("panel: %s", error)  # MT5 cerrado o sin conexión: se reintenta
+        if not opened and PANEL_PATH.exists():
+            os.startfile(PANEL_PATH)
+            opened = True
+        time.sleep(args.watch * 60)
 
 
 def main() -> None:
@@ -148,6 +168,7 @@ def main() -> None:
     panel.add_argument("--configs", type=Path, nargs="+",
                        default=[Path("config/settings.toml"), Path("config/rsi2.toml")])
     panel.add_argument("--no-open", action="store_true", help="solo genera el archivo")
+    panel.add_argument("--watch", type=int, metavar="MINUTOS", help="regenera el panel cada MINUTOS hasta que exista STOP")
     panel.set_defaults(func=cmd_panel)
 
     args = parser.parse_args()
