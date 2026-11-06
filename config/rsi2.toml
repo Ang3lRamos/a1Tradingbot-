@@ -1,0 +1,57 @@
+# Segundo bot: RSI2 en índices de EE. UU., velas diarias. Corre en paralelo al de settings.toml con otro magic
+# y otra bitácora. Las horas están en hora del servidor de GNT (Nueva York + 5 h).
+# DE40 queda fuera: a la hora de entrada (cierre de la vela diaria, 00:00 servidor) su spread es ~16 veces el de día.
+
+[bot]
+mode = "dry_run"
+allow_real_account = false
+symbols = ["US500.z", "US100.z", "US30.z"]
+timeframe = "D1"
+magic = 260512
+max_entry_delay_minutes = 15   # la vela diaria cierra a medianoche; margen para el primer tick del día
+journal_path = "~/.mt5bot/journal_rsi2.db"
+kill_switch_file = "STOP"      # el mismo archivo detiene a los dos bots
+
+[strategy]
+name = "rsi2"
+target_r = 6.0                 # sale por regla; el TP lejano existe porque toda orden lleva SL y TP
+breakeven_at_r = 0             # sin breakeven ni trailing: la salida es la regla de la media
+trail_atr = 0
+atr_period = 14
+flat_by = ""
+
+[strategy.orb]
+range_start = "08:00"
+range_end = "09:00"
+entry_until = "12:00"
+stop_mode = "range_mid"
+
+[strategy.donchian]
+channel_bars = 20
+trend_ema = 200
+stop_atr = 2.0
+
+[strategy.rsi2]
+rsi_period = 2
+entry_below = 10.0
+trend_sma = 200
+exit_sma = 5
+stop_atr = 3.0
+max_bars = 10
+
+[risk]
+risk_per_trade_pct = 0.5
+max_daily_loss_pct = 2.0
+max_trades_per_day = 3
+max_open_positions = 3         # uno por índice; están muy correlacionados (riesgo conjunto hasta 1.5 %)
+max_spread_points = 300        # normal: US500 31, US100 70, US30 130 puntos
+min_reward_risk = 1.0
+trading_hours = ["00:00", "23:59"]
+friday_close = ""              # mantiene posiciones durante el fin de semana, como en la investigación
+
+[backtest]
+initial_balance = 100000.0
+spread_points = 2
+commission_per_lot = 10.0
+monte_carlo_runs = 10000
+seed = 19

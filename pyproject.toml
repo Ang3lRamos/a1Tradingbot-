@@ -1,0 +1,29 @@
+[project]
+name = "mt5bot"
+version = "0.1.0"
+description = "Bot de trading para MetaTrader 5 con filtro de riesgo, bitácora y backtest"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+mt5 = ["MetaTrader5>=5.0.45; sys_platform == 'win32'"]
+dev = ["pytest>=8.0"]
+research = ["scikit-learn>=1.4"]
+
+[project.scripts]
+mt5bot = "mt5bot.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

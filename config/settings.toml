@@ -1,0 +1,60 @@
+# Las horas están en hora del servidor del broker (la que muestra MT5), no en hora de Colombia.
+
+[bot]
+# "dry_run": calcula y registra todo pero no envía órdenes.
+# "live": envía órdenes. Solo funciona en cuenta demo salvo que allow_real_account = true.
+mode = "dry_run"
+allow_real_account = false
+symbols = ["EURUSD.z", "GBPUSD.z", "USDJPY.z", "AUDUSD.z", "USDCAD.z", "USDCHF.z",
+           "NZDUSD.z", "EURJPY.z", "GBPJPY.z", "EURGBP.z", "XAUUSD.z"]
+timeframe = "H4"
+magic = 260511
+max_entry_delay_minutes = 5    # no entrar si la vela de la señal cerró hace más que esto
+# Fuera de OneDrive: la sincronización bloquea archivos y SQLite fallaría con "database is locked".
+journal_path = "~/.mt5bot/journal.db"
+kill_switch_file = "STOP"
+
+[strategy]
+name = "donchian"              # "orb" o "donchian"
+# D no tiene objetivo propio (sale por trailing); el TP lejano existe porque toda orden lleva SL y TP.
+target_r = 6.0
+breakeven_at_r = 1.0           # 0 desactiva breakeven y trailing
+trail_atr = 3.0                # trailing a N x ATR desde breakeven_at_r; 0 lo desactiva
+atr_period = 14
+flat_by = ""                   # "HH:MM" cierra todo cada día a esa hora; "" no cierra
+
+[strategy.orb]
+range_start = "08:00"
+range_end = "09:00"
+entry_until = "12:00"
+stop_mode = "range_mid"        # "range_mid" o "range_opposite"
+
+[strategy.donchian]
+channel_bars = 20              # ruptura del máximo/mínimo de las últimas N velas
+trend_ema = 200                # solo a favor del cierre respecto a esta EMA
+stop_atr = 2.0
+
+[strategy.rsi2]
+rsi_period = 2
+entry_below = 10.0             # compra si el RSI cae bajo este valor...
+trend_sma = 200                # ...con el cierre sobre esta media
+exit_sma = 5                   # sale al primer cierre sobre esta media
+stop_atr = 3.0                 # stop de emergencia
+max_bars = 10                  # o tras estas velas
+
+[risk]
+risk_per_trade_pct = 0.5
+max_daily_loss_pct = 2.0
+max_trades_per_day = 3
+max_open_positions = 2
+max_spread_points = 20
+min_reward_risk = 1.0
+trading_hours = ["08:00", "16:00"]
+friday_close = "20:00"         # el viernes desde esta hora no se entra y se cierra todo; "" lo desactiva
+
+[backtest]
+initial_balance = 100000.0       # igual a la demo de GNT; con 1000 el lote mínimo no cabe en el riesgo
+spread_points = 2              # piso; se usa el spread de la vela si es mayor
+commission_per_lot = 10.0      # ida y vuelta, en moneda de la cuenta (medido en GNT demo)
+monte_carlo_runs = 10000
+seed = 19
