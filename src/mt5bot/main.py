@@ -12,11 +12,21 @@ from mt5bot.config import load_settings
 DEFAULT_CONFIG = Path("config/settings.toml")
 
 
-def connected_gateway():
+def connected_gateway(broker: str = "mt5"):
     from dotenv import load_dotenv
-    from mt5bot.io.mt5_gateway import Mt5Gateway
 
     load_dotenv()
+    if broker == "alpaca":
+        from mt5bot.io.alpaca_gateway import AlpacaGateway
+
+        # Cuenta de práctica salvo ALPACA_PAPER=false; aun así el motor bloquea live en real sin allow_real_account.
+        paper = os.environ.get("ALPACA_PAPER", "true").lower() != "false"
+        gateway = AlpacaGateway.from_keys(os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"], paper)
+        gateway.connect()
+        return gateway
+
+    from mt5bot.io.mt5_gateway import Mt5Gateway
+
     gateway = Mt5Gateway()
     gateway.connect(int(os.environ["MT5_LOGIN"]), os.environ["MT5_PASSWORD"],
                     os.environ["MT5_SERVER"], os.environ.get("MT5_PATH") or None)
@@ -30,7 +40,7 @@ def cmd_run(args) -> None:
     settings = load_settings(args.config)
     if args.mode:
         settings = replace(settings, bot=replace(settings.bot, mode=args.mode))
-    gateway = connected_gateway()
+    gateway = connected_gateway(settings.bot.broker)
     journal = Journal(settings.bot.journal_path)
     try:
         Bot(gateway, settings, journal).run_forever()
@@ -42,7 +52,7 @@ def cmd_run(args) -> None:
 def cmd_download(args) -> None:
     from mt5bot.io.history_files import save_history
 
-    gateway = connected_gateway()
+    gateway = connected_gateway(load_settings(args.config).bot.broker)
     try:
         # symbol_spec primero: hace symbol_select y da un error claro si el símbolo no existe.
         spec = gateway.symbol_spec(args.symbol)

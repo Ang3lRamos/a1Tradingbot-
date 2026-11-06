@@ -20,7 +20,8 @@ El mismo código de estrategia, lotes y riesgo se usa en el backtest (`backtest/
 ## Arquitectura (respetar las capas)
 
 - `core/`: lógica pura. Sin MT5, sin archivos, sin red. Recibe datos y devuelve datos. Aquí van las reglas.
-- `io/`: `mt5_gateway.py` es el ÚNICO módulo que importa `MetaTrader5`. `journal.py` (SQLite), `history_files.py` (CSV + JSON de especificación del símbolo).
+- `io/`: `mt5_gateway.py` es el ÚNICO módulo que importa `MetaTrader5`; `alpaca_gateway.py` el único que importa `alpaca`
+  (misma interfaz; `bot.broker` en el TOML elige cuál usa `main.connected_gateway`). `journal.py` (SQLite), `history_files.py` (CSV + JSON de especificación del símbolo).
 - `backtest/`: simulador y métricas (resumen + Monte Carlo con semilla).
 - `engine.py`: clase `Bot`, orquesta el ciclo y el kill switch. Sin reglas de negocio propias.
 - `main.py`: CLI (`run`, `download`, `backtest`). Imports perezosos para que el backtest corra sin MT5.
@@ -56,7 +57,14 @@ cartera (posiciones abiertas entre símbolos).
 - `config/settings.toml`: Donchian H4 en 11 pares/oro, magic 260511, bitácora `~/.mt5bot/journal.db`, tarea "mt5bot".
 - `config/rsi2.toml`: RSI2 D1 en US500/US100/US30, magic 260512, bitácora `~/.mt5bot/journal_rsi2.db`, mantiene
   posiciones el fin de semana (`friday_close = ""`). Tarea "mt5bot-rsi2". DE40 fuera por spread a medianoche.
-- Un solo archivo `STOP` detiene a los dos. Nunca usar `STOP` para pruebas: cierra posiciones reales del bot.
+- `config/alpaca_rsi2.toml` (broker `alpaca`): RSI2 D1 en SPY/QQQ/DIA, magic 260513, bitácora `~/.mt5bot/journal_alpaca.db`,
+  cuenta de práctica de Alpaca (llaves `ALPACA_*` en `.env`). Hora "del servidor" = Nueva York. La vela diaria se da por
+  cerrada al abrir la sesión siguiente (09:30), así entra a la apertura como el backtest. Alpaca no tiene magic: las
+  órdenes llevan `client_order_id` `<magic>-open-<ticket>` / `<magic>-close-<ticket>-<n>`; 1 lote = 1 acción entera
+  porque las órdenes bracket (SL/TP en el servidor) no admiten fraccionadas. Backtest con Yahoo 2010-2026
+  (`research/etf_backtest.py`): 467 ops, 70.9 % ganadoras, +0.112 R. Tarea "mt5bot-alpaca" (`scripts/register_alpaca_task.ps1`).
+  El panel todavía muestra solo los bots de MT5.
+- Un solo archivo `STOP` detiene a todos. Nunca usar `STOP` para pruebas: cierra posiciones reales del bot.
   Para reiniciar un bot con código nuevo: matar su proceso python; su lanzador lo relanza en ~1 min.
 - Cada bot escribe un latido por vuelta (`<bitácora>.heartbeat`); el panel lo usa para saber si sigue vivo.
 - `report.py` arma el panel; las operaciones cerradas salen de `history_deals` de MT5 (incluye salidas por SL/TP
@@ -74,8 +82,8 @@ cartera (posiciones abiertas entre símbolos).
 ## Comandos
 
 ```bash
-pip install -e ".[mt5,dev]"     # en Windows; en Linux/Mac sin [mt5]
-pytest -p no:cacheprovider     # 66 tests, corren sin MT5 (FakeGateway en tests/test_engine.py)
+pip install -e ".[mt5,dev,alpaca]"  # en Windows; en Linux/Mac sin [mt5]
+pytest -p no:cacheprovider     # 77 tests, corren sin MT5 ni Alpaca (FakeGateway en tests/test_engine.py)
 mt5bot download --symbol EURUSD.z --timeframe H4 --days 730
 mt5bot backtest --csv data/EURUSD.z_H4.csv --spec data/EURUSD.z_spec.json
 mt5bot run                      # respeta bot.mode (dry_run por defecto)

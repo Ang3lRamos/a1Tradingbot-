@@ -1,7 +1,8 @@
 ﻿# Arranca todo lo necesario para la prueba en demo y mantiene vivo un bot (una configuración).
 # Lo lanzan las tareas programadas "mt5bot" (config\settings.toml) y "mt5bot-rsi2" (config\rsi2.toml)
 # al iniciar sesión; también se puede correr a mano: .\scripts\start_bot.ps1 -Config config\rsi2.toml
-# - Abre MT5 de GNT si no está abierto y espera a que conecte con Algo Trading activo.
+# - Abre MT5 de GNT si no está abierto y espera a que conecte con Algo Trading activo
+#   (salvo con broker = "alpaca", p. ej. config\alpaca_rsi2.toml: ese bot habla con Alpaca por internet).
 # - Lanza keep_awake.ps1 para que el equipo y la pantalla no se suspendan.
 # - Lanza el vigilante del panel (mt5bot panel --watch), que renueva ~\.mt5bot\panel.html cada pocos minutos.
 # - Corre el bot en live y lo reinicia si se cae. Si existe el archivo STOP no lo reinicia:
@@ -16,6 +17,7 @@ $stopFile = Join-Path $project "STOP"
 $botName  = [IO.Path]::GetFileNameWithoutExtension($Config)
 $retrySeconds = 60
 $panelMinutes = 5
+$usesMt5 = -not (Select-String -Path (Join-Path $project $Config) -Pattern '^broker\s*=\s*"alpaca"' -Quiet)
 
 New-Item -ItemType Directory -Force $logDir | Out-Null
 Set-Location $project
@@ -81,13 +83,13 @@ if (-not (Test-ProcessRunning "python.exe" "*mt5bot.main panel*--watch*")) {
     Write-Log "vigilante del panel iniciado (cada $panelMinutes min)"
 }
 
-if (-not (Get-Process terminal64 -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $terminal })) {
+if ($usesMt5 -and -not (Get-Process terminal64 -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $terminal })) {
     Start-Process $terminal
     Write-Log "MT5 abierto"
 }
 
 while (-not (Test-Path $stopFile)) {
-    Wait-Mt5Ready
+    if ($usesMt5) { Wait-Mt5Ready }
     $botLog = Join-Path $logDir "bot_${botName}_$(Get-Date -Format 'yyyyMMdd_HHmmss').log"
     Write-Log "bot arrancando en live; log en $botLog"
     $bot = Start-Process $python -ArgumentList @("-m", "mt5bot.main", "--config", $Config, "run", "--mode", "live") `

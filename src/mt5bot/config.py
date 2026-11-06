@@ -4,10 +4,12 @@ from datetime import time
 from pathlib import Path
 
 STRATEGY_NAMES = ("orb", "donchian", "rsi2")
+BROKERS = ("mt5", "alpaca")
 
 
 @dataclass(frozen=True)
 class BotConfig:
+    broker: str
     mode: str
     allow_real_account: bool
     symbols: list[str]
@@ -124,10 +126,13 @@ def load_settings(path: Path) -> Settings:
 
     if bot["mode"] not in ("dry_run", "live"):
         raise ValueError(f"bot.mode debe ser 'dry_run' o 'live', no {bot['mode']!r}")
+    if bot["broker"] not in BROKERS:
+        raise ValueError(f"bot.broker debe ser uno de {BROKERS}, no {bot['broker']!r}")
 
     start, end = risk["trading_hours"]
     return Settings(
         bot=BotConfig(
+            broker=bot["broker"],
             mode=bot["mode"],
             allow_real_account=bot["allow_real_account"],
             symbols=bot["symbols"],

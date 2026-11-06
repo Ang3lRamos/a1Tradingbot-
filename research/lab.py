@@ -39,6 +39,8 @@ YAHOO = {
     "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "JPY=X", "AUDUSD": "AUDUSD=X",
     "USDCAD": "CAD=X", "USDCHF": "CHF=X", "NZDUSD": "NZDUSD=X",
     "SPX": "^GSPC", "NDX": "^NDX", "DJI": "^DJI", "DAX": "^GDAXI", "N225": "^N225", "FTSE": "^FTSE",
+    # ETF reales (Alpaca): su apertura sí es un precio operable, a diferencia de la del índice.
+    "SPY": "SPY", "QQQ": "QQQ", "DIA": "DIA",
 }
 
 # Costo ida y vuelta (fracción del precio) y swap anual en % del nominal (largo, corto) en GNT.

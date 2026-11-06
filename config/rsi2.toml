@@ -3,6 +3,7 @@
 # DE40 queda fuera: a la hora de entrada (cierre de la vela diaria, 00:00 servidor) su spread es ~16 veces el de día.
 
 [bot]
+broker = "mt5"                 # "mt5" o "alpaca" (config/alpaca_rsi2.toml)
 mode = "dry_run"
 allow_real_account = false
 symbols = ["US500.z", "US100.z", "US30.z"]

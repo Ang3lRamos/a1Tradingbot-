@@ -1,0 +1,65 @@
+# Tercer bot: la misma estrategia RSI2 del bot de índices, pero sobre ETF reales en Alpaca (cuenta de práctica).
+# Sin apalancamiento de CFD, sin swap y sin comisión. Las horas son de Nueva York (la "hora del servidor" de Alpaca).
+# La vela diaria se da por cerrada cuando abre la sesión siguiente: la señal se evalúa a las 09:30 y entra a la apertura.
+# Llaves en .env (ALPACA_API_KEY, ALPACA_SECRET_KEY); ALPACA_PAPER=false sería dinero real y el motor lo bloquea
+# mientras allow_real_account = false.
+
+[bot]
+broker = "alpaca"
+mode = "dry_run"
+allow_real_account = false
+symbols = ["SPY", "QQQ", "DIA"]   # S&P 500, Nasdaq 100 y Dow Jones: los mismos índices que US500, US100 y US30
+timeframe = "D1"
+magic = 260513
+max_entry_delay_minutes = 15      # entra en los primeros minutos de la sesión, como el backtest (a la apertura)
+journal_path = "~/.mt5bot/journal_alpaca.db"
+kill_switch_file = "STOP"         # el mismo archivo detiene a todos los bots
+
+[strategy]
+name = "rsi2"
+target_r = 6.0                    # sale por regla; el TP lejano existe porque toda orden lleva SL y TP
+breakeven_at_r = 0
+trail_atr = 0
+atr_period = 14
+flat_by = ""
+
+[strategy.orb]
+range_start = "09:30"
+range_end = "10:30"
+entry_until = "12:00"
+stop_mode = "range_mid"
+
+[strategy.donchian]
+channel_bars = 20
+trend_ema = 200
+stop_atr = 2.0
+
+[strategy.rsi2]
+rsi_period = 2
+entry_below = 10.0
+trend_sma = 200
+exit_sma = 5
+stop_atr = 3.0
+max_bars = 10
+
+[risk]
+risk_per_trade_pct = 0.5
+max_daily_loss_pct = 2.0
+max_trades_per_day = 3
+max_open_positions = 3            # uno por ETF; están muy correlacionados (riesgo conjunto hasta 1.5 %)
+max_spread_points = 10            # 1 punto = 1 centavo; SPY y QQQ suelen estar en 1-2, DIA en 2-5
+min_reward_risk = 1.0
+trading_hours = ["00:00", "23:59"]   # la hora de entrada la fija la apertura de la sesión (velas diarias a las 00:00)
+friday_close = ""                 # mantiene posiciones el fin de semana, como en la investigación
+
+[backtest]
+initial_balance = 100000.0
+spread_points = 2
+commission_per_lot = 0.0
+monte_carlo_runs = 10000
+seed = 19
+# Backtest con datos diarios de Yahoo 2010-2026 (research/etf_backtest.py, 467 ops): referencia del panel.
+# Estable por periodo: +0.099 R (2010-16), +0.111 R (2017-21), +0.129 R (2022+).
+expected_win_rate_pct = 70.9
+expected_avg_r = 0.112
+expected_trades_per_month = 2.4

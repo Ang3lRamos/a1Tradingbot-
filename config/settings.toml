@@ -1,6 +1,7 @@
 # Las horas están en hora del servidor del broker (la que muestra MT5), no en hora de Colombia.
 
 [bot]
+broker = "mt5"                 # "mt5" o "alpaca" (config/alpaca_rsi2.toml)
 # "dry_run": calcula y registra todo pero no envía órdenes.
 # "live": envía órdenes. Solo funciona en cuenta demo salvo que allow_real_account = true.
 mode = "dry_run"

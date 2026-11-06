@@ -11,6 +11,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mt5 = ["MetaTrader5>=5.0.45; sys_platform == 'win32'"]
+alpaca = ["alpaca-py>=0.45", "tzdata"]
 dev = ["pytest>=8.0"]
 research = ["scikit-learn>=1.4"]
 
