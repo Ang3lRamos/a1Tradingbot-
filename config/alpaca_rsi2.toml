@@ -47,7 +47,8 @@ risk_per_trade_pct = 0.5
 max_daily_loss_pct = 2.0
 max_trades_per_day = 3
 max_open_positions = 3            # uno por ETF; están muy correlacionados (riesgo conjunto hasta 1.5 %)
-max_spread_points = 10            # 1 punto = 1 centavo; SPY y QQQ suelen estar en 1-2, DIA en 2-5
+max_spread_points = 50            # 1 punto = 1 centavo. La cotización gratuita es solo de IEX y sale más ancha que
+                                  # la real (medido: SPY 4, QQQ 24, DIA 17); solo frena cotizaciones absurdas
 min_reward_risk = 1.0
 trading_hours = ["00:00", "23:59"]   # la hora de entrada la fija la apertura de la sesión (velas diarias a las 00:00)
 friday_close = ""                 # mantiene posiciones el fin de semana, como en la investigación
