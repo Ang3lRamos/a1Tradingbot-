@@ -83,6 +83,8 @@ def cmd_backtest(args) -> None:
 
 BOT_TITLES = {"donchian": "Bot Donchian · seguir tendencias", "rsi2": "Bot RSI2 · comprar caídas en índices",
               "orb": "Bot ORB · ruptura del rango de apertura"}
+ACCOUNT_LABELS = {"mt5": "Cuenta demo GNT (MT5) · horas del servidor GNT",
+                  "alpaca": "Cuenta de práctica Alpaca · horas de Nueva York"}
 PANEL_PATH = Path.home() / ".mt5bot" / "panel.html"
 
 
@@ -110,8 +112,9 @@ def bot_view(gateway, settings):
                                "price_open": p.price_open, "price_now": now_price, "sl": p.sl,
                                "profit": p.profit + p.swap, "r": r})
     bot, strategy = settings.bot, settings.strategy
+    title = BOT_TITLES.get(strategy.name, strategy.name)
     return BotView(
-        name=BOT_TITLES.get(strategy.name, strategy.name),
+        name=f"{title} · ETF en Alpaca" if bot.broker == "alpaca" else title,
         description=f"{bot.timeframe} · {', '.join(bot.symbols)} · magic {magic} · modo {bot.mode} en el archivo",
         expected=settings.backtest,
         trades=closed_trades(gateway.bot_deals(magic, datetime.now() - timedelta(days=400)), info),
@@ -120,15 +123,29 @@ def bot_view(gateway, settings):
 
 
 def write_panel(configs: list[Path]) -> None:
-    from mt5bot.report import render
+    """Un conector por broker. Si uno no responde, el panel sale igual con los bots de los demás."""
+    from mt5bot.io.mt5_gateway import Mt5Error
+    from mt5bot.report import AccountView, render
 
-    gateway = connected_gateway()
-    try:
-        balance, equity = gateway.balance_and_equity()
-        bots = [bot_view(gateway, load_settings(path)) for path in configs]
-    finally:
-        gateway.shutdown()
-    PANEL_PATH.write_text(render(bots, balance, equity, datetime.now()), encoding="utf-8")
+    by_broker: dict[str, list] = {}
+    for path in configs:
+        settings = load_settings(path)
+        by_broker.setdefault(settings.bot.broker, []).append(settings)
+    accounts, bots = [], []
+    for broker, group in by_broker.items():
+        try:
+            gateway = connected_gateway(broker)
+            try:
+                balance, equity = gateway.balance_and_equity()
+                bots += [bot_view(gateway, settings) for settings in group]
+            finally:
+                gateway.shutdown()
+            accounts.append(AccountView(ACCOUNT_LABELS[broker], balance, equity))
+        except Mt5Error as error:
+            accounts.append(AccountView(ACCOUNT_LABELS[broker], None, None, str(error)))
+    if not bots:
+        raise Mt5Error("ningún broker respondió: " + "; ".join(a.error for a in accounts))
+    PANEL_PATH.write_text(render(bots, accounts, datetime.now()), encoding="utf-8")
 
 
 def cmd_panel(args) -> None:
@@ -176,7 +193,7 @@ def main() -> None:
 
     panel = commands.add_parser("panel", help="genera el panel HTML de los bots y lo abre en el navegador")
     panel.add_argument("--configs", type=Path, nargs="+",
-                       default=[Path("config/settings.toml"), Path("config/rsi2.toml")])
+                       default=[Path("config/settings.toml"), Path("config/rsi2.toml"), Path("config/alpaca_rsi2.toml")])
     panel.add_argument("--no-open", action="store_true", help="solo genera el archivo")
     panel.add_argument("--watch", type=int, metavar="MINUTOS", help="regenera el panel cada MINUTOS hasta que exista STOP")
     panel.set_defaults(func=cmd_panel)

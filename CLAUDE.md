@@ -63,7 +63,7 @@ cartera (posiciones abiertas entre símbolos).
   órdenes llevan `client_order_id` `<magic>-open-<ticket>` / `<magic>-close-<ticket>-<n>`; 1 lote = 1 acción entera
   porque las órdenes bracket (SL/TP en el servidor) no admiten fraccionadas. Backtest con Yahoo 2010-2026
   (`research/etf_backtest.py`): 467 ops, 70.9 % ganadoras, +0.112 R. Tarea "mt5bot-alpaca" (`scripts/register_alpaca_task.ps1`).
-  El panel todavía muestra solo los bots de MT5.
+  El panel muestra los tres bots: abre un conector por broker y, si uno no responde, sale igual con los demás.
 - Un solo archivo `STOP` detiene a todos. Nunca usar `STOP` para pruebas: cierra posiciones reales del bot.
   Para reiniciar un bot con código nuevo: matar su proceso python; su lanzador lo relanza en ~1 min.
 - Cada bot escribe un latido por vuelta (`<bitácora>.heartbeat`); el panel lo usa para saber si sigue vivo.

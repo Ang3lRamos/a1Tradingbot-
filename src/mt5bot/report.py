@@ -25,6 +25,14 @@ class BotView:
     status: str
 
 
+@dataclass(frozen=True)
+class AccountView:
+    label: str
+    balance: float | None
+    equity: float | None
+    error: str | None = None  # el broker no respondió: sus bots no salen en esta vuelta
+
+
 def closed_trades(deals: list[dict], positions_info: dict[int, dict]) -> list[dict]:
     """Una fila por posición ya cerrada del todo: precios promedio, resultado en USD y en R."""
     by_position: dict[int, list[dict]] = {}
@@ -167,18 +175,27 @@ def _bot_section(bot: BotView) -> str:
 </section>"""
 
 
-def render(bots: list[BotView], balance: float, equity: float, generated_at: datetime) -> str:
+def _account_block(account: AccountView) -> str:
+    if account.error:
+        return (f'<div class="account"><h2>{escape(account.label)}</h2>'
+                f'<p class="neg">Sin conexión: {escape(account.error)}</p></div>')
+    return (f'<div class="account"><h2>{escape(account.label)}</h2><div class="stats">'
+            f'<div><span class="k">Balance</span><span class="v">{account.balance:,.2f}</span></div>'
+            f'<div><span class="k">Equidad</span><span class="v">{account.equity:,.2f}</span></div>'
+            f'<div><span class="k">Flotante</span><span class="v">{_money(account.equity - account.balance)}</span></div>'
+            f'</div></div>')
+
+
+def render(bots: list[BotView], accounts: list[AccountView], generated_at: datetime) -> str:
     sections = "".join(_bot_section(bot) for bot in bots)
     return f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><title>Panel mt5bot</title>
 <meta http-equiv="refresh" content="{REFRESH_SECONDS}">
 <style>{STYLE}</style></head><body><main>
 <header class="top"><h1>Panel mt5bot</h1>
-<p class="muted">Cuenta demo GNT · datos de las {generated_at:%H:%M} del {generated_at:%d/%m/%Y} (hora de tu PC) ·
+<p class="muted">Cuentas de prueba · datos de las {generated_at:%H:%M} del {generated_at:%d/%m/%Y} (hora de tu PC) ·
 la página se recarga sola cada minuto; los datos se renuevan cada 5 minutos mientras los bots corren</p>
-<div class="stats"><div><span class="k">Balance</span><span class="v">{balance:,.2f}</span></div>
-<div><span class="k">Equidad</span><span class="v">{equity:,.2f}</span></div>
-<div><span class="k">Flotante</span><span class="v">{_money(equity - balance)}</span></div></div></header>
+{"".join(_account_block(a) for a in accounts)}</header>
 {sections}
 <footer class="muted">R = resultado medido en riesgos: 1R es lo que se pierde si toca el stop inicial (~0.5 % de la cuenta).
 Se compara con el backtest de cada bot recién desde unas {MIN_TRADES_TO_COMPARE} operaciones.</footer>
@@ -200,6 +217,7 @@ p { margin:4px 0; } .muted { color:var(--muted); }
 .stats div { display:grid; gap:2px; } .k { font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
 .v { font-size:1.5rem; font-weight:600; font-variant-numeric:tabular-nums; } .d { font-size:.85rem; color:var(--muted); }
 .status { font-weight:600; }
+.account { margin-top:16px; } .account h2 { font-size:1.05rem; }
 .verdict { margin-top:14px; padding:10px 12px; border-left:3px solid var(--accent); background:var(--bg); }
 .pos { color:var(--gain); } .neg { color:var(--loss); }
 .scroll { overflow-x:auto; } table { border-collapse:collapse; width:100%; font-size:.9rem; }

@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from mt5bot.report import BotView, closed_trades, liveness, render, summary, verdict
+from mt5bot.report import AccountView, BotView, closed_trades, liveness, render, summary, verdict
 
 T0 = datetime(2026, 11, 6, 12, 0)
 
@@ -53,7 +53,8 @@ def test_liveness_from_heartbeat():
 def test_render_contains_each_bot(settings):
     bot = BotView(name="Bot <Donchian>", description="H4", expected=settings.backtest, trades=[],
                   open_positions=[], events=[], status="🟢 Activo")
-    page = render([bot, replace(bot, name="Bot RSI2")], 100000.0, 100216.59, T0)
+    accounts = [AccountView("Demo GNT", 100000.0, 100216.59), AccountView("Alpaca", None, None, "sin llaves")]
+    page = render([bot, replace(bot, name="Bot RSI2")], accounts, T0)
     assert "Bot &lt;Donchian&gt;" in page and "Bot RSI2" in page   # el texto se escapa
-    assert "+216.59" in page
+    assert "+216.59" in page and "Sin conexión: sin llaves" in page
     assert 'http-equiv="refresh"' in page                         # el navegador recarga la página sola
