@@ -156,6 +156,9 @@ class Mt5Gateway:
             "type_filling": self._filling_mode(position.symbol),
         })
 
+    def positions_without_stop(self, magic: int, symbol: str) -> list:
+        return []  # en MT5 el SL vive en la posición y no vence
+
     def position_is_buy(self, position) -> bool:
         return position.type == self.mt5.POSITION_TYPE_BUY
 

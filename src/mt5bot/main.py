@@ -12,7 +12,7 @@ from mt5bot.config import load_settings
 DEFAULT_CONFIG = Path("config/settings.toml")
 
 
-def connected_gateway(broker: str = "mt5"):
+def connected_gateway(broker: str = "mt5", fractional: bool = False):
     from dotenv import load_dotenv
 
     load_dotenv()
@@ -21,7 +21,8 @@ def connected_gateway(broker: str = "mt5"):
 
         # Cuenta de práctica salvo ALPACA_PAPER=false; aun así el motor bloquea live en real sin allow_real_account.
         paper = os.environ.get("ALPACA_PAPER", "true").lower() != "false"
-        gateway = AlpacaGateway.from_keys(os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"], paper)
+        gateway = AlpacaGateway.from_keys(os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"], paper,
+                                          fractional)
         gateway.connect()
         return gateway
 
@@ -40,7 +41,7 @@ def cmd_run(args) -> None:
     settings = load_settings(args.config)
     if args.mode:
         settings = replace(settings, bot=replace(settings.bot, mode=args.mode))
-    gateway = connected_gateway(settings.bot.broker)
+    gateway = connected_gateway(settings.bot.broker, settings.bot.fractional)
     journal = Journal(settings.bot.journal_path)
     try:
         Bot(gateway, settings, journal).run_forever()

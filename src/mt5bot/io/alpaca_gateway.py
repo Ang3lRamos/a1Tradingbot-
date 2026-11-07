@@ -7,6 +7,10 @@ Diferencias con MT5 que importan:
 - Alpaca no tiene magic: las órdenes del bot llevan client_order_id "<magic>-open-<ticket>" y
   "<magic>-close-<ticket>-<n>". Una posición es del bot si su última entrada sigue sin salida y coincide en cantidad.
 - 1 lote = 1 acción entera: las órdenes bracket (SL y TP en el servidor) no admiten fraccionadas.
+- Modo fraccionado (bot.fractional, para cuentas pequeñas): Alpaca solo acepta órdenes DAY y sin bracket. La entrada
+  va sin TP (RSI2 sale por regla) y el stop es una orden aparte "<magic>-stop-<ticket>-<n>" que vence al cierre;
+  el motor la vuelve a poner en cuanto vence (positions_without_stop / place_stop) y Alpaca la deja en cola para
+  la sesión siguiente. Si el equipo está apagado cuando vence, la posición abre la sesión siguiente sin stop.
 """
 import time as clock
 from dataclasses import dataclass
@@ -21,7 +25,7 @@ from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.enums import OrderClass, OrderSide, OrderType, QueryOrderStatus, TimeInForce
 from alpaca.trading.requests import (GetCalendarRequest, GetOrdersRequest, MarketOrderRequest, ReplaceOrderRequest,
-                                     StopLossRequest, TakeProfitRequest)
+                                     StopLossRequest, StopOrderRequest, TakeProfitRequest)
 from requests.exceptions import RequestException
 
 from mt5bot.core.models import OrderPlan, SymbolSpec
@@ -30,9 +34,11 @@ from mt5bot.io.mt5_gateway import Mt5Error
 NEW_YORK = ZoneInfo("America/New_York")
 SIP_DELAY = timedelta(minutes=16)  # el plan gratuito da datos SIP (todas las bolsas) con 15 minutos de atraso
 MAX_SHARES = 100_000
+FRACTION_STEP = 0.0001  # Alpaca acepta hasta 9 decimales; 4 bastan para cuentas de 100 USD
 MAX_ORDERS = 500
 WAIT_SECONDS = 15
 FINISHED = {"filled", "canceled", "expired", "rejected", "replaced", "done_for_day"}
+STOP_TYPES = ("stop", "stop_limit")
 
 
 class AlpacaError(Mt5Error):
@@ -54,6 +60,7 @@ class BrokerPosition:
     stop_leg_id: str | None
     open_leg_ids: tuple[str, ...]
     closing: bool  # ya hay una orden de cierre del bot en cola (p. ej. enviada fuera de horario)
+    bracket: bool  # SL y TP son patas de la entrada (GTC); si no, el stop es una orden DAY aparte
     swap: float = 0.0
 
 
@@ -67,7 +74,7 @@ def _new_york(moment: datetime) -> datetime:
 
 def _parse_id(client_order_id: str, magic: int) -> tuple[str, int] | None:
     parts = (client_order_id or "").split("-")
-    if len(parts) >= 3 and parts[0] == str(magic) and parts[1] in ("open", "close") and parts[2].isdigit():
+    if len(parts) >= 3 and parts[0] == str(magic) and parts[1] in ("open", "close", "stop") and parts[2].isdigit():
         return parts[1], int(parts[2])
     return None
 
@@ -77,16 +84,17 @@ def _filled(order) -> bool:
 
 
 class AlpacaGateway:
-    def __init__(self, trading, data, paper: bool, now=None):
-        self.trading, self.data, self.paper = trading, data, paper
+    def __init__(self, trading, data, paper: bool, now=None, fractional: bool = False):
+        self.trading, self.data, self.paper, self.fractional = trading, data, paper, fractional
         self._now = now or (lambda: datetime.now(NEW_YORK).replace(tzinfo=None))
         self._calendar: tuple[date, list] | None = None
 
     @classmethod
-    def from_keys(cls, api_key: str, secret_key: str, paper: bool) -> "AlpacaGateway":
+    def from_keys(cls, api_key: str, secret_key: str, paper: bool, fractional: bool = False) -> "AlpacaGateway":
         from alpaca.data.historical import StockHistoricalDataClient
         from alpaca.trading.client import TradingClient
-        return cls(TradingClient(api_key, secret_key, paper=paper), StockHistoricalDataClient(api_key, secret_key), paper)
+        return cls(TradingClient(api_key, secret_key, paper=paper), StockHistoricalDataClient(api_key, secret_key),
+                   paper, fractional=fractional)
 
     def connect(self) -> None:
         account = self._call(self.trading.get_account)
@@ -109,6 +117,11 @@ class AlpacaGateway:
         asset = self._call(self.trading.get_asset, symbol)
         if not asset.tradable:
             raise AlpacaError(f"{symbol} no se puede operar en Alpaca")
+        if self.fractional:
+            if not asset.fractionable:
+                raise AlpacaError(f"{symbol} no admite fraccionadas en Alpaca")
+            return SymbolSpec(name=symbol, digits=2, point=0.01, tick_size=0.01, tick_value=0.01,
+                              volume_min=FRACTION_STEP, volume_max=MAX_SHARES, volume_step=FRACTION_STEP)
         return SymbolSpec(name=symbol, digits=2, point=0.01, tick_size=0.01, tick_value=0.01,
                           volume_min=1, volume_max=MAX_SHARES, volume_step=1)
 
@@ -143,21 +156,34 @@ class AlpacaGateway:
             position = held.get(entry.symbol)
             if (symbol and entry.symbol != symbol) or not _filled(entry) or position is None:
                 continue
-            if self._exit_fills(entry, closes.get(ticket, [])) or abs(float(position.qty)) != float(entry.filled_qty):
+            exits = closes.get(ticket, [])
+            if self._exit_fills(entry, exits) or abs(float(position.qty)) != float(entry.filled_qty):
                 continue
-            legs = entry.legs or []
-            stop = next((leg for leg in legs if _value(leg.type) in ("stop", "stop_limit")), None)
-            target = next((leg for leg in legs if _value(leg.type) == "limit"), None)
+            legs, is_buy = entry.legs or [], _value(entry.side) == "buy"
+            protective = [*legs, *(o for o in exits if _value(o.type) != "market")]
+            active = [o for o in protective if _value(o.status) not in FINISHED]
+            stop = next((o for o in active if _value(o.type) in STOP_TYPES), None)
+            target = next((o for o in active if _value(o.type) == "limit"), None)
             found.append(BrokerPosition(
                 ticket=ticket, symbol=entry.symbol, volume=float(entry.filled_qty),
                 price_open=float(position.avg_entry_price),
-                sl=float(stop.stop_price) if stop else None, tp=float(target.limit_price) if target else None,
-                profit=float(position.unrealized_pl or 0), magic=magic, is_buy=_value(entry.side) == "buy",
+                sl=float(stop.stop_price) if stop else self._last_stop(protective, is_buy),
+                tp=float(target.limit_price) if target else None,
+                profit=float(position.unrealized_pl or 0), magic=magic, is_buy=is_buy,
                 stop_leg_id=str(stop.id) if stop else None,
-                open_leg_ids=tuple(str(leg.id) for leg in legs if _value(leg.status) not in FINISHED),
-                closing=any(_value(c.status) not in FINISHED for c in closes.get(ticket, [])),
+                open_leg_ids=tuple(str(o.id) for o in active),
+                closing=any(_value(o.type) == "market" and _value(o.status) not in FINISHED for o in exits),
+                bracket=bool(legs),
             ))
         return found
+
+    def positions_without_stop(self, magic: int, symbol: str) -> list[BrokerPosition]:
+        """Posiciones fraccionadas cuyo stop DAY ya venció (o nunca se puso) y que no se están cerrando."""
+        return [p for p in self.positions(magic, symbol) if not p.bracket and not p.closing and p.stop_leg_id is None]
+
+    def place_stop(self, position: BrokerPosition, stop: float):
+        return self._submit_stop(position.symbol, position.volume, position.is_buy, stop, position.magic,
+                                 position.ticket)
 
     def today_deals(self, magic: int, server_now: datetime) -> tuple[float, int]:
         """(resultado del día sin el flotante, entradas del día). Así el motor calcula pnl_today = equity - last_equity."""
@@ -182,6 +208,8 @@ class AlpacaGateway:
         return deals
 
     def send_market_order(self, plan: OrderPlan, magic: int, comment: str):
+        if self.fractional:
+            return self._send_fractional(plan, magic)
         signal, ticket = plan.signal, int(clock.time() * 1000)
         request = MarketOrderRequest(
             symbol=signal.symbol, qty=int(plan.lots), side=OrderSide.BUY if signal.side == "buy" else OrderSide.SELL,
@@ -195,6 +223,37 @@ class AlpacaGateway:
         price = float(order.filled_avg_price) if order.filled_avg_price else None
         return SimpleNamespace(order=ticket, price=price)
 
+    def _send_fractional(self, plan: OrderPlan, magic: int):
+        """Entrada a mercado DAY sin bracket y, ya llena, su stop DAY aparte. Alpaca no admite cortos fraccionados."""
+        signal, ticket = plan.signal, int(clock.time() * 1000)
+        if signal.side != "buy":
+            raise AlpacaError(f"{signal.symbol}: Alpaca no admite ventas en corto con fraccionadas")
+        request = MarketOrderRequest(
+            symbol=signal.symbol, qty=round(plan.lots, 4), side=OrderSide.BUY, type=OrderType.MARKET,
+            time_in_force=TimeInForce.DAY, client_order_id=f"{magic}-open-{ticket}",
+        )
+        order = self._wait(self._call(self.trading.submit_order, request).id, _filled)
+        if _filled(order):
+            self._submit_stop(signal.symbol, float(order.filled_qty), True, signal.stop, magic, ticket)
+        # Si aún no se llenó, el motor pone el stop en la vuelta siguiente (positions_without_stop).
+        price = float(order.filled_avg_price) if order.filled_avg_price else None
+        return SimpleNamespace(order=ticket, price=price)
+
+    def _submit_stop(self, symbol: str, qty: float, is_buy: bool, stop: float, magic: int, ticket: int):
+        request = StopOrderRequest(
+            symbol=symbol, qty=qty, side=OrderSide.SELL if is_buy else OrderSide.BUY, stop_price=round(stop, 2),
+            time_in_force=TimeInForce.DAY, client_order_id=f"{magic}-stop-{ticket}-{int(clock.time() * 1000)}",
+        )
+        return self._call(self.trading.submit_order, request)
+
+    @staticmethod
+    def _last_stop(protective: list, is_buy: bool) -> float | None:
+        """Precio del último stop ya vencido: solo se mueven a favor, así que es el más ajustado."""
+        prices = [float(o.stop_price) for o in protective if _value(o.type) in STOP_TYPES and o.stop_price]
+        if not prices:
+            return None
+        return max(prices) if is_buy else min(prices)
+
     def modify_stop(self, position: BrokerPosition, new_stop: float):
         if position.stop_leg_id is None:
             raise AlpacaError(f"{position.symbol}: la posición {position.ticket} no tiene orden de stop")
@@ -202,8 +261,8 @@ class AlpacaGateway:
                           ReplaceOrderRequest(stop_price=round(new_stop, 2)))
 
     def close_position(self, position: BrokerPosition, comment: str):
-        # Las acciones del SL y el TP están reservadas: primero se cancelan (cancelar una cancela la otra) y luego se
-        # vende. Fuera de horario la orden queda en cola para la apertura siguiente; no se manda otra encima.
+        # Las acciones del SL y el TP están reservadas: primero se cancelan (en un bracket cancelar una cancela la
+        # otra; en fraccionadas solo hay un stop) y luego se vende. Fuera de horario la orden queda en cola para la apertura siguiente; no se manda otra encima.
         if position.closing:
             return None
         if position.open_leg_ids:

@@ -18,6 +18,7 @@ class BotConfig:
     max_entry_delay_minutes: int
     journal_path: Path
     kill_switch_file: Path
+    fractional: bool  # solo Alpaca: acciones fraccionadas, stop DAY que el bot renueva cada sesión
 
 
 @dataclass(frozen=True)
@@ -141,6 +142,7 @@ def load_settings(path: Path) -> Settings:
             max_entry_delay_minutes=bot["max_entry_delay_minutes"],
             journal_path=Path(bot["journal_path"]).expanduser(),
             kill_switch_file=Path(bot["kill_switch_file"]),
+            fractional=bot.get("fractional", False),
         ),
         strategy=_strategy(raw["strategy"]),
         risk=RiskLimits(

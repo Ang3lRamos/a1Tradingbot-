@@ -28,9 +28,17 @@ def bracket(ticket=1, stop_status="new", target_status="new", qty=10):
     return order("entry", f"{MAGIC}-open-{ticket}", qty=qty, price=600.0, legs=legs)
 
 
+def fractional(ticket=1, stops=(("stop-1", "new", "560.0"),), qty=0.5):
+    """Entrada fraccionada sin bracket y sus stops DAY aparte (id, estado, precio)."""
+    entry = order("entry", f"{MAGIC}-open-{ticket}", qty=qty, price=600.0)
+    return [entry, *(order(id, f"{MAGIC}-stop-{ticket}-{n}", status=status, side="sell", type="stop", qty=qty,
+                           stop_price=price) for n, (id, status, price) in enumerate(stops))]
+
+
 class FakeTrading:
-    def __init__(self, orders=(), held=(), equity=100_500.0, last_equity=100_000.0):
+    def __init__(self, orders=(), held=(), equity=100_500.0, last_equity=100_000.0, fractionable=True):
         self.orders, self.held, self.equity, self.last_equity = list(orders), list(held), equity, last_equity
+        self.fractionable = fractionable
         self.submitted, self.cancelled = [], []
 
     def get_account(self):
@@ -38,7 +46,7 @@ class FakeTrading:
                                account_blocked=False, account_number="PA123")
 
     def get_asset(self, symbol):
-        return SimpleNamespace(tradable=True)
+        return SimpleNamespace(tradable=True, fractionable=self.fractionable)
 
     def get_all_positions(self):
         return self.held
@@ -58,6 +66,9 @@ class FakeTrading:
         self.cancelled.append(order_id)
         for leg in (leg for o in self.orders for leg in o.legs):
             leg.status = "canceled"  # OCO: cancelar una pata cancela la otra
+        for o in self.orders:
+            if o.id == order_id:
+                o.status = "canceled"
 
     def submit_order(self, request):
         self.submitted.append(request)
@@ -75,8 +86,8 @@ class FakeData:
         return {"SPY": SimpleNamespace(bid_price=600.0, ask_price=600.02)}
 
 
-def gateway(trading=None, now=datetime(2026, 11, 9, 8, 0)):
-    return AlpacaGateway(trading or FakeTrading(), FakeData(), paper=True, now=lambda: now)
+def gateway(trading=None, now=datetime(2026, 11, 9, 8, 0), fractional=False):
+    return AlpacaGateway(trading or FakeTrading(), FakeData(), paper=True, now=lambda: now, fractional=fractional)
 
 
 def held(qty="10", unrealized="50"):
@@ -167,3 +178,74 @@ def test_alpaca_config_loads_in_dry_run():
     from mt5bot.config import load_settings
     settings = load_settings(Path(__file__).parents[1] / "config" / "alpaca_rsi2.toml")
     assert settings.bot.broker == "alpaca" and settings.bot.mode == "dry_run" and not settings.bot.allow_real_account
+
+
+def test_fractional_spec_allows_fractions_only_on_fractionable_assets():
+    spec = gateway(fractional=True).symbol_spec("SPY")
+    assert (spec.volume_min, spec.volume_step) == (0.0001, 0.0001)
+    with pytest.raises(Exception, match="fraccionadas"):
+        gateway(FakeTrading(fractionable=False), fractional=True).symbol_spec("SPY")
+
+
+def test_fractional_entry_is_a_day_market_order_followed_by_a_day_stop():
+    trading = FakeTrading()
+    signal = Signal("SPY", "buy", datetime(2026, 11, 6), 600.0, 560.123, 840.0, "test")
+    result = gateway(trading, fractional=True).send_market_order(OrderPlan(signal, 0.12341, 4.8), MAGIC, "rsi2 buy")
+    entry, stop = trading.submitted
+    assert entry.qty == 0.1234 and entry.time_in_force.value == "day" and entry.order_class is None
+    assert entry.take_profit is None and entry.client_order_id == f"{MAGIC}-open-{result.order}"
+    assert stop.type.value == "stop" and stop.time_in_force.value == "day" and stop.side.value == "sell"
+    assert stop.stop_price == 560.12 and stop.qty == 10      # la cantidad que se llenó
+    assert stop.client_order_id.startswith(f"{MAGIC}-stop-{result.order}-")
+
+
+def test_fractional_short_is_refused():
+    signal = Signal("SPY", "sell", datetime(2026, 11, 6), 600.0, 640.0, 400.0, "test")
+    with pytest.raises(Exception, match="corto"):
+        gateway(fractional=True).send_market_order(OrderPlan(signal, 0.1, 4.0), MAGIC, "rsi2 sell")
+
+
+def test_fractional_position_reads_its_day_stop():
+    gate = gateway(FakeTrading(fractional(), [held(qty="0.5")]))
+    [position] = gate.positions(MAGIC, "SPY")
+    assert (position.volume, position.sl, position.tp, position.stop_leg_id) == (0.5, 560.0, None, "stop-1")
+    assert not position.bracket and gate.positions_without_stop(MAGIC, "SPY") == []
+
+
+def test_expired_day_stop_is_reported_with_its_latest_price():
+    stops = (("stop-1", "expired", "550.0"), ("stop-2", "expired", "560.0"))
+    gate = gateway(FakeTrading(fractional(stops=stops), [held(qty="0.5")]))
+    [position] = gate.positions_without_stop(MAGIC, "SPY")
+    assert position.sl == 560.0 and position.stop_leg_id is None   # el más ajustado: solo se mueve a favor
+
+
+def test_bracket_and_closing_positions_need_no_new_stop():
+    assert gateway(FakeTrading([bracket(stop_status="canceled", target_status="canceled")],
+                               [held()])).positions_without_stop(MAGIC, "SPY") == []
+    queued = order("close", f"{MAGIC}-close-1-5", status="accepted", side="sell")
+    expired = fractional(stops=(("stop-1", "expired", "560.0"),))
+    assert gateway(FakeTrading([*expired, queued], [held(qty="0.5")])).positions_without_stop(MAGIC, "SPY") == []
+
+
+def test_filled_day_stop_closes_the_fractional_position():
+    gate = gateway(FakeTrading(fractional(stops=(("stop-1", "filled", "560.0"),)), [held(qty="0.5")]))
+    assert gate.positions(MAGIC) == []
+
+
+def test_fractional_close_cancels_the_stop_before_selling():
+    trading = FakeTrading(fractional(), [held(qty="0.5")])
+    gate = gateway(trading, fractional=True)
+    [position] = gate.positions(MAGIC)
+    gate.close_position(position, "regla de salida")
+    assert trading.cancelled == ["stop-1"]
+    [sell] = trading.submitted
+    assert sell.side.value == "sell" and sell.qty == 0.5 and sell.client_order_id.startswith(f"{MAGIC}-close-1-")
+
+
+def test_renewed_stop_uses_position_quantity():
+    trading = FakeTrading(fractional(stops=(("stop-1", "expired", "560.0"),)), [held(qty="0.5")])
+    gate = gateway(trading, fractional=True)
+    [position] = gate.positions_without_stop(MAGIC, "SPY")
+    gate.place_stop(position, position.sl)
+    [stop] = trading.submitted
+    assert (stop.qty, stop.stop_price, stop.time_in_force.value) == (0.5, 560.0, "day")

@@ -59,6 +59,7 @@ class Bot:
         reason = forced_close_reason(server_now, settings.strategy.flat_by, settings.risk.friday_close)
         if reason:
             self._close_positions(symbol, server_now, reason)
+        self._renew_stops(symbol, server_now)
 
         bars = self.gateway.closed_bars(symbol, settings.bot.timeframe, self.strategy.bars_needed(settings.strategy))
         last_bar_time = bars["time"].iloc[-1].to_pydatetime()
@@ -148,6 +149,15 @@ class Bot:
                 self.gateway.modify_stop(position, new_stop)
                 self.journal.log("stop_moved", {"ticket": position.ticket, "from": position.sl, "to": new_stop},
                                  symbol, server_now)
+
+    def _renew_stops(self, symbol: str, server_now: datetime) -> None:
+        """Fraccionadas en Alpaca: el stop es una orden DAY que vence al cierre; se repone en cuanto falta."""
+        for position in self.gateway.positions_without_stop(self.settings.bot.magic, symbol):
+            stop = position.sl or self.journal.initial_stop(position.ticket)
+            if stop is None:
+                raise Mt5Error(f"{symbol}: la posición {position.ticket} no tiene stop que reponer")
+            self.gateway.place_stop(position, stop)
+            self.journal.log("stop_renewed", {"ticket": position.ticket, "stop": stop}, symbol, server_now)
 
     def _close_positions(self, symbol: str, server_now: datetime, reason: str) -> None:
         for position in self.gateway.positions(self.settings.bot.magic, symbol):

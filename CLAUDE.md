@@ -36,7 +36,9 @@ Indicadores en `core/indicators.py`, calculados como MT5 (iATR = media simple de
 
 - `mode = "dry_run"` por defecto. `live` sobre cuenta real se rechaza salvo `allow_real_account = true` (`Bot.check_account_allowed`).
 - Lotes siempre redondeados hacia ABAJO al `volume_step`; si ni el lote mínimo cabe en el riesgo, no se opera.
-- Toda orden lleva `sl` y `tp` en la propia solicitud (viven en el servidor del broker).
+- Toda orden lleva `sl` y `tp` en la propia solicitud (viven en el servidor del broker). Única excepción aprobada por
+  Angel (2026-11-07): `bot.fractional = true` en Alpaca, donde las fraccionadas no admiten bracket ni GTC; la entrada va
+  sin TP y el stop es una orden DAY aparte que el motor repone cada vez que vence (`Bot._renew_stops`).
 - El filtro de riesgo no se puede saltar: toda entrada pasa por `evaluate()`.
 - La pérdida diaria incluye el flotante: `pnl_today = equity - balance_inicio_del_día`.
 - El bot solo toca posiciones con su `magic`; nunca operaciones manuales.
@@ -60,8 +62,9 @@ cartera (posiciones abiertas entre símbolos).
 - `config/alpaca_rsi2.toml` (broker `alpaca`): RSI2 D1 en SPY/QQQ/DIA, magic 260513, bitácora `~/.mt5bot/journal_alpaca.db`,
   cuenta de práctica de Alpaca (llaves `ALPACA_*` en `.env`). Hora "del servidor" = Nueva York. La vela diaria se da por
   cerrada al abrir la sesión siguiente (09:30), así entra a la apertura como el backtest. Alpaca no tiene magic: las
-  órdenes llevan `client_order_id` `<magic>-open-<ticket>` / `<magic>-close-<ticket>-<n>`; 1 lote = 1 acción entera
-  porque las órdenes bracket (SL/TP en el servidor) no admiten fraccionadas. Backtest con Yahoo 2010-2026
+  órdenes llevan `client_order_id` `<magic>-open-<ticket>` / `<magic>-close-<ticket>-<n>` / `<magic>-stop-<ticket>-<n>`.
+  Desde 2026-11-07 corre con `fractional = true` (lotes de 0.0001 acción, stop DAY renovado; para probar la vía de una
+  cuenta de 100 USD). Con `false`, 1 lote = 1 acción entera con bracket GTC (SL/TP en el servidor). Backtest con Yahoo 2010-2026
   (`research/etf_backtest.py`): 467 ops, 70.9 % ganadoras, +0.112 R. Tarea "mt5bot-alpaca" (`scripts/register_alpaca_task.ps1`).
   El panel muestra los tres bots: abre un conector por broker y, si uno no responde, sale igual con los demás.
 - Un solo archivo `STOP` detiene a todos. Nunca usar `STOP` para pruebas: cierra posiciones reales del bot.
@@ -83,7 +86,7 @@ cartera (posiciones abiertas entre símbolos).
 
 ```bash
 pip install -e ".[mt5,dev,alpaca]"  # en Windows; en Linux/Mac sin [mt5]
-pytest -p no:cacheprovider     # 77 tests, corren sin MT5 ni Alpaca (FakeGateway en tests/test_engine.py)
+pytest -p no:cacheprovider     # 87 tests, corren sin MT5 ni Alpaca (FakeGateway en tests/test_engine.py)
 mt5bot download --symbol EURUSD.z --timeframe H4 --days 730
 mt5bot backtest --csv data/EURUSD.z_H4.csv --spec data/EURUSD.z_spec.json
 mt5bot run                      # respeta bot.mode (dry_run por defecto)

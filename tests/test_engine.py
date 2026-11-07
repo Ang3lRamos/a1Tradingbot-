@@ -18,7 +18,7 @@ class FakeGateway:
     def __init__(self, spec, demo=True, open_positions=(), now=JUST_AFTER_CLOSE):
         self.spec, self.demo, self.now = spec, demo, now
         self.open_positions = list(open_positions)
-        self.sent, self.closed, self.modified = [], [], []
+        self.sent, self.closed, self.modified, self.placed = [], [], [], []
 
     def is_demo_account(self):
         return self.demo
@@ -34,6 +34,13 @@ class FakeGateway:
 
     def positions(self, magic, symbol=None):
         return self.open_positions
+
+    def positions_without_stop(self, magic, symbol):
+        return [p for p in self.open_positions if getattr(p, "stop_expired", False)]
+
+    def place_stop(self, position, stop):
+        self.placed.append((position.ticket, stop))
+        position.sl, position.stop_expired = stop, False
 
     def position_is_buy(self, position):
         return position.type == "buy"
@@ -140,3 +147,12 @@ def test_kill_switch_closes_positions(settings, eurusd, journal, tmp_path):
     cfg = replace(settings, bot=replace(settings.bot, kill_switch_file=stop_file))
     Bot(gateway, cfg, journal).run_forever()
     assert gateway.closed == [(7, "kill switch")]
+
+
+def test_expired_fractional_stop_is_renewed_with_the_journal_stop(orb_settings, eurusd, journal):
+    position = open_buy(journal, stop=1.0995)
+    position.sl, position.stop_expired = None, True
+    gateway = FakeGateway(eurusd, open_positions=[position])
+    Bot(gateway, orb_settings, journal).run_cycle("EURUSD")
+    assert gateway.placed == [(7, 1.0995)]
+    assert "stop_renewed" in kinds(journal)

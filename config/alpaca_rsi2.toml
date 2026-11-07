@@ -13,6 +13,10 @@ timeframe = "D1"
 magic = 260513
 max_entry_delay_minutes = 15      # entra en los primeros minutos de la sesión, como el backtest (a la apertura)
 journal_path = "~/.mt5bot/journal_alpaca.db"
+# Fraccionadas (para cuentas pequeñas): Alpaca no admite bracket ni GTC con fracciones. La entrada va sin TP (sale por
+# regla) y el stop es una orden DAY que vence al cierre; el bot la repone en cuanto vence. Con el equipo apagado al
+# cierre, la sesión siguiente abre sin stop. false = acciones enteras con SL y TP en el servidor (bracket GTC).
+fractional = true
 kill_switch_file = "STOP"         # el mismo archivo detiene a todos los bots
 
 [strategy]
