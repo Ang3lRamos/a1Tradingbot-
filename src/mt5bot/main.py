@@ -127,13 +127,14 @@ def bot_view(gateway, settings):
         expected=settings.backtest,
         trades=closed_trades(gateway.bot_deals(magic, datetime.now() - timedelta(days=400)), info),
         open_positions=open_positions, events=events, status=liveness(last_beat, datetime.now()), magic=magic,
+        last_beat=last_beat,
     )
 
 
-def write_panel(configs: list[Path]) -> list:
-    """Un conector por broker. Si uno no responde, el panel sale igual con los bots de los demás."""
+def collect(configs: list[Path]) -> tuple[list, list]:
+    """Bots y cuentas. Un conector por broker: si uno no responde, sus bots faltan y su cuenta lleva el error."""
     from mt5bot.io.mt5_gateway import Mt5Error
-    from mt5bot.report import AccountView, render
+    from mt5bot.report import AccountView
 
     by_broker: dict[str, list] = {}
     for path in configs:
@@ -155,30 +156,46 @@ def write_panel(configs: list[Path]) -> list:
         if account not in shown:
             shown.add(account)
             accounts.append(view)
+    return bots, accounts
+
+
+def write_panel(bots: list, accounts: list) -> None:
+    from mt5bot.io.mt5_gateway import Mt5Error
+    from mt5bot.report import render
+
     if not bots:
         raise Mt5Error("ningún broker respondió: " + "; ".join(a.error for a in accounts))
     PANEL_PATH.write_text(render(bots, accounts, datetime.now()), encoding="utf-8")
-    return bots
 
 
-def notify_trades(bots: list) -> None:
-    """Avisa por Telegram las operaciones nuevas. La primera vez solo anota las que ya había, sin avisarlas."""
+def load_alert_state():
+    from mt5bot.notify import AlertState
+
+    raw = json.loads(ALERTS_PATH.read_text(encoding="utf-8"))
+    if isinstance(raw, list):  # formato anterior: solo las operaciones avisadas
+        raw = {"sent": raw}
+    return AlertState(set(raw.get("sent", [])), set(raw.get("down", [])), set(raw.get("brokers_down", [])))
+
+
+def notify(bots: list, accounts: list, check_liveness: bool) -> None:
+    """Avisa por Telegram lo nuevo (operaciones, errores, bots caídos, brokers sin respuesta).
+
+    La primera vez solo anota lo que ya había, sin avisarlo. Si Telegram falla no se guarda el estado: se reintenta
+    en la vuelta siguiente (lo ya enviado en esa vuelta puede repetirse).
+    """
     from mt5bot.io import telegram
-    from mt5bot.notify import pending_alerts
+    from mt5bot.notify import AlertState, pending_alerts
 
     token, chat_id = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
     if not (token and chat_id):
         return
     first_time = not ALERTS_PATH.exists()
-    sent = set() if first_time else set(json.loads(ALERTS_PATH.read_text(encoding="utf-8")))
-    try:
-        for key, text in pending_alerts(bots, sent):
-            if not first_time:
-                telegram.send(token, chat_id, text)
-            sent.add(key)
-    finally:
-        # Se guarda aunque un envío falle: los ya enviados no se repiten y el que falló se reintenta luego.
-        ALERTS_PATH.write_text(json.dumps(sorted(sent)), encoding="utf-8")
+    state = AlertState() if first_time else load_alert_state()
+    messages, state = pending_alerts(bots, accounts, state, datetime.now(), check_liveness and not first_time)
+    for text in [] if first_time else messages:
+        telegram.send(token, chat_id, text)
+    ALERTS_PATH.write_text(json.dumps({"sent": sorted(state.sent), "down": sorted(state.down),
+                                       "brokers_down": sorted(state.brokers_down)}), encoding="utf-8")
 
 
 def cmd_telegram(args) -> None:
@@ -205,16 +222,19 @@ def cmd_panel(args) -> None:
     from mt5bot.io.telegram import TelegramError
 
     if not args.watch:
-        write_panel(args.configs)
+        write_panel(*collect(args.configs))
         print(f"panel guardado en {PANEL_PATH}")
         if not args.no_open:
             os.startfile(PANEL_PATH)
         return
     # Modo vigilante: regenera cada `watch` minutos hasta que aparezca STOP (el mismo kill switch de los bots).
-    opened = args.no_open
+    opened, started = args.no_open, datetime.now()
     while not Path("STOP").exists():
         try:
-            notify_trades(write_panel(args.configs))
+            bots, accounts = collect(args.configs)
+            # Los primeros minutos los bots apenas arrancan (p. ej. al prender el PC): sin latido no es caída.
+            notify(bots, accounts, check_liveness=datetime.now() - started > timedelta(minutes=10))
+            write_panel(bots, accounts)
         except (Mt5Error, TelegramError) as error:
             logging.getLogger("mt5bot").error("panel: %s", error)  # sin conexión: se reintenta en la próxima vuelta
         if not opened and PANEL_PATH.exists():

@@ -95,7 +95,7 @@ cartera (posiciones abiertas entre símbolos).
 
 ```bash
 pip install -e ".[mt5,dev,alpaca]"  # en Windows; en Linux/Mac sin [mt5]
-pytest -p no:cacheprovider     # 97 tests, corren sin MT5 ni Alpaca (FakeGateway en tests/test_engine.py)
+pytest -p no:cacheprovider     # 101 tests, corren sin MT5 ni Alpaca (FakeGateway en tests/test_engine.py)
 mt5bot download --symbol EURUSD.z --timeframe H4 --days 730
 mt5bot backtest --csv data/EURUSD.z_H4.csv --spec data/EURUSD.z_spec.json
 mt5bot run                      # respeta bot.mode (dry_run por defecto)
@@ -108,7 +108,8 @@ mt5bot panel                    # (o scripts/panel.ps1) genera ~/.mt5bot/panel.h
                                 # posiciones, operaciones cerradas desde el historial de MT5 vs backtest, eventos
 mt5bot panel --watch 5 --no-open  # vigilante: lo regenera cada 5 min hasta que exista STOP; lo lanza start_bot.ps1
                                 # (log en ~/.mt5bot/logs/panel.log). La página se recarga sola cada minuto.
-                                # También avisa por Telegram cada operación abierta o cerrada (TELEGRAM_* en .env).
+                                # También avisa por Telegram (TELEGRAM_* en .env): operaciones abiertas y cerradas, errores
+                                # de las bitácoras, bots sin latido 10 min y brokers sin respuesta (y cuando vuelven).
 mt5bot telegram                 # sin TELEGRAM_CHAT_ID muestra el chat id; con él manda un mensaje de prueba
 ```
 

@@ -24,6 +24,7 @@ class BotView:
     events: list[dict]
     status: str
     magic: int = 0
+    last_beat: datetime | None = None
 
 
 @dataclass(frozen=True)
