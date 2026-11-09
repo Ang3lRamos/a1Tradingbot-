@@ -44,7 +44,7 @@ max_bars = 10
 weekends = true                   # en cripto sábado y domingo son días normales
 
 [risk]
-risk_per_trade_pct = 0.5
+risk_per_trade_pct = 1.0                # cuenta de 100 USD: 1 USD de riesgo por operación (decidido 2026-11-08)
 max_daily_loss_pct = 2.0          # se mide sobre toda la cuenta de Alpaca (incluye el bot de ETF)
 max_trades_per_day = 3
 max_open_positions = 3
