@@ -2,7 +2,7 @@
 # Lo lanzan las tareas programadas "mt5bot" (config\settings.toml) y "mt5bot-rsi2" (config\rsi2.toml)
 # al iniciar sesión; también se puede correr a mano: .\scripts\start_bot.ps1 -Config config\rsi2.toml
 # - Abre MT5 de GNT si no está abierto y espera a que conecte con Algo Trading activo
-#   (salvo con broker = "alpaca", p. ej. config\alpaca_rsi2.toml: ese bot habla con Alpaca por internet).
+#   (salvo con broker = "alpaca" o "alpaca_crypto", p. ej. config\alpaca_rsi2.toml: esos bots hablan con Alpaca).
 # - Lanza keep_awake.ps1 para que el equipo y la pantalla no se suspendan.
 # - Lanza el vigilante del panel (mt5bot panel --watch), que renueva ~\.mt5bot\panel.html cada pocos minutos.
 # - Corre el bot en live y lo reinicia si se cae. Si existe el archivo STOP no lo reinicia:
@@ -17,7 +17,7 @@ $stopFile = Join-Path $project "STOP"
 $botName  = [IO.Path]::GetFileNameWithoutExtension($Config)
 $retrySeconds = 60
 $panelMinutes = 5
-$usesMt5 = -not (Select-String -Path (Join-Path $project $Config) -Pattern '^broker\s*=\s*"alpaca"' -Quiet)
+$usesMt5 = -not (Select-String -Path (Join-Path $project $Config) -Pattern '^broker\s*=\s*"alpaca(_crypto)?"' -Quiet)
 
 New-Item -ItemType Directory -Force $logDir | Out-Null
 Set-Location $project

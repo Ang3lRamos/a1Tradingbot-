@@ -18,19 +18,23 @@ SATURDAY = 5
 
 
 def bars_needed(cfg: StrategyConfig) -> int:
+    if cfg.rsi2.weekends:
+        return cfg.rsi2.trend_sma + 20
     # Holgura para las velas de fin de semana que se descartan (GNT tiene una vela D1 de 1 hora los domingos).
     return int(cfg.rsi2.trend_sma * 1.25) + 20
 
 
-def weekday_bars(bars: pd.DataFrame) -> pd.DataFrame:
-    """Solo días hábiles: la vela corta del domingo (reapertura) distorsiona RSI y medias diarias."""
+def weekday_bars(bars: pd.DataFrame, cfg: StrategyConfig) -> pd.DataFrame:
+    """Solo días hábiles: la vela corta del domingo (reapertura) distorsiona RSI y medias diarias. En cripto no aplica."""
+    if cfg.rsi2.weekends:
+        return bars
     return bars[bars["time"].dt.day_of_week < SATURDAY]
 
 
 def find_signal(symbol: str, bars: pd.DataFrame, cfg: StrategyConfig) -> Signal | None:
     """Evalúa la última vela hábil de bars (velas cerradas). Sin historial suficiente no hay señal."""
     params = cfg.rsi2
-    bars = weekday_bars(bars)
+    bars = weekday_bars(bars, cfg)
     if len(bars) < params.trend_sma + 20:
         return None
     close = float(bars["close"].iloc[-1])
@@ -53,7 +57,7 @@ def find_signal(symbol: str, bars: pd.DataFrame, cfg: StrategyConfig) -> Signal 
 def exit_due(bars: pd.DataFrame, opened_at: datetime, cfg: StrategyConfig) -> bool:
     """True si la última vela cerró sobre la media de salida o la posición ya cumplió max_bars velas."""
     params = cfg.rsi2
-    bars = weekday_bars(bars)
+    bars = weekday_bars(bars, cfg)
     times = bars["time"]
     started = times[times <= pd.Timestamp(opened_at)]
     held = int((times >= started.iloc[-1]).sum()) if not started.empty else 0

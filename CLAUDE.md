@@ -20,7 +20,7 @@ El mismo código de estrategia, lotes y riesgo se usa en el backtest (`backtest/
 ## Arquitectura (respetar las capas)
 
 - `core/`: lógica pura. Sin MT5, sin archivos, sin red. Recibe datos y devuelve datos. Aquí van las reglas.
-- `io/`: `mt5_gateway.py` es el ÚNICO módulo que importa `MetaTrader5`; `alpaca_gateway.py` el único que importa `alpaca`
+- `io/`: `mt5_gateway.py` es el ÚNICO módulo que importa `MetaTrader5`; `alpaca_gateway.py` y su subclase `alpaca_crypto.py` los únicos que importan `alpaca`
   (misma interfaz; `bot.broker` en el TOML elige cuál usa `main.connected_gateway`). `journal.py` (SQLite), `history_files.py` (CSV + JSON de especificación del símbolo).
 - `backtest/`: simulador y métricas (resumen + Monte Carlo con semilla).
 - `engine.py`: clase `Bot`, orquesta el ciclo y el kill switch. Sin reglas de negocio propias.
@@ -38,7 +38,9 @@ Indicadores en `core/indicators.py`, calculados como MT5 (iATR = media simple de
 - Lotes siempre redondeados hacia ABAJO al `volume_step`; si ni el lote mínimo cabe en el riesgo, no se opera.
 - Toda orden lleva `sl` y `tp` en la propia solicitud (viven en el servidor del broker). Única excepción aprobada por
   Angel (2026-11-07): `bot.fractional = true` en Alpaca, donde las fraccionadas no admiten bracket ni GTC; la entrada va
-  sin TP y el stop es una orden DAY aparte que el motor repone cada vez que vence (`Bot._renew_stops`).
+  sin TP y el stop es una orden DAY aparte que el motor repone cada vez que vence (`Bot._renew_stops`). Segunda
+  excepción aprobada (2026-11-08, cuenta de práctica): cripto en Alpaca (`alpaca_crypto`), sin bracket; entrada GTC
+  y stop-limit GTC aparte en el servidor, repuesto por el motor si falta.
 - El filtro de riesgo no se puede saltar: toda entrada pasa por `evaluate()`.
 - La pérdida diaria incluye el flotante: `pnl_today = equity - balance_inicio_del_día`.
 - El bot solo toca posiciones con su `magic`; nunca operaciones manuales.
@@ -54,7 +56,7 @@ son bid: las ventas se cierran al ask (bid + spread). Swap por noche con los dat
 día del broker). La salida por regla se decide al cierre y se ejecuta a la apertura siguiente. No simula límites de
 cartera (posiciones abiertas entre símbolos).
 
-## Dos bots en la demo
+## Bots en la demo
 
 - `config/settings.toml`: Donchian H4 en 11 pares/oro, magic 260511, bitácora `~/.mt5bot/journal.db`, tarea "mt5bot".
 - `config/rsi2.toml`: RSI2 D1 en US500/US100/US30, magic 260512, bitácora `~/.mt5bot/journal_rsi2.db`, mantiene
@@ -66,7 +68,14 @@ cartera (posiciones abiertas entre símbolos).
   Desde 2026-11-07 corre con `fractional = true` (lotes de 0.0001 acción, stop DAY renovado; para probar la vía de una
   cuenta de 100 USD). Con `false`, 1 lote = 1 acción entera con bracket GTC (SL/TP en el servidor). Backtest con Yahoo 2010-2026
   (`research/etf_backtest.py`): 467 ops, 70.9 % ganadoras, +0.112 R. Tarea "mt5bot-alpaca" (`scripts/register_alpaca_task.ps1`).
-  El panel muestra los tres bots: abre un conector por broker y, si uno no responde, sale igual con los demás.
+  El panel muestra todos los bots: abre un conector por broker y, si uno no responde, sale igual con los demás
+  (la cuenta de Alpaca sale una sola vez aunque la usen dos bots).
+- `config/alpaca_crypto.toml` (broker `alpaca_crypto`, `io/alpaca_crypto.py`): RSI2 D1 en BTC/ETH/SOL al contado, magic
+  260514, bitácora `~/.mt5bot/journal_alpaca_crypto.db`, misma cuenta de práctica de Alpaca. 24/7; la vela diaria abre a
+  medianoche UTC (19:00 Nueva York) y `[strategy.rsi2] weekends = true` cuenta sábado y domingo. Sin cortos ni bracket:
+  entrada a mercado GTC y stop-limit GTC aparte (límite 2 % bajo el stop). Backtest `research/h07_crypto_alpaca.py`
+  con comisión 0.25 %/lado: 126 ops, ~0 R (+0.06 R 2021-23, -0.02 R 2024+), SIN ventaja: es prueba técnica.
+  Desde 2026-11-08 en live en la cuenta de práctica (tarea "mt5bot-crypto", `scripts/register_crypto_task.ps1`).
 - Un solo archivo `STOP` detiene a todos. Nunca usar `STOP` para pruebas: cierra posiciones reales del bot.
   Para reiniciar un bot con código nuevo: matar su proceso python; su lanzador lo relanza en ~1 min.
 - Cada bot escribe un latido por vuelta (`<bitácora>.heartbeat`); el panel lo usa para saber si sigue vivo.
@@ -86,7 +95,7 @@ cartera (posiciones abiertas entre símbolos).
 
 ```bash
 pip install -e ".[mt5,dev,alpaca]"  # en Windows; en Linux/Mac sin [mt5]
-pytest -p no:cacheprovider     # 87 tests, corren sin MT5 ni Alpaca (FakeGateway en tests/test_engine.py)
+pytest -p no:cacheprovider     # 95 tests, corren sin MT5 ni Alpaca (FakeGateway en tests/test_engine.py)
 mt5bot download --symbol EURUSD.z --timeframe H4 --days 730
 mt5bot backtest --csv data/EURUSD.z_H4.csv --spec data/EURUSD.z_spec.json
 mt5bot run                      # respeta bot.mode (dry_run por defecto)

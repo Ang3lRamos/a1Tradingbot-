@@ -4,7 +4,7 @@ from datetime import time
 from pathlib import Path
 
 STRATEGY_NAMES = ("orb", "donchian", "rsi2")
-BROKERS = ("mt5", "alpaca")
+BROKERS = ("mt5", "alpaca", "alpaca_crypto")
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,7 @@ class Rsi2Config:
     exit_sma: int
     stop_atr: float
     max_bars: int
+    weekends: bool = False  # cripto: sábado y domingo son días normales; en CFD solo hay la vela corta del domingo
 
 
 @dataclass(frozen=True)

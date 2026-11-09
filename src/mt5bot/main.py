@@ -16,8 +16,11 @@ def connected_gateway(broker: str = "mt5", fractional: bool = False):
     from dotenv import load_dotenv
 
     load_dotenv()
-    if broker == "alpaca":
+    if broker in ("alpaca", "alpaca_crypto"):
         from mt5bot.io.alpaca_gateway import AlpacaGateway
+
+        if broker == "alpaca_crypto":
+            from mt5bot.io.alpaca_crypto import AlpacaCryptoGateway as AlpacaGateway
 
         # Cuenta de práctica salvo ALPACA_PAPER=false; aun así el motor bloquea live en real sin allow_real_account.
         paper = os.environ.get("ALPACA_PAPER", "true").lower() != "false"
@@ -82,10 +85,13 @@ def cmd_backtest(args) -> None:
     print(json.dumps(report, indent=2, ensure_ascii=False))
 
 
-BOT_TITLES = {"donchian": "Bot Donchian · seguir tendencias", "rsi2": "Bot RSI2 · comprar caídas en índices",
+BOT_TITLES = {"donchian": "Bot Donchian · seguir tendencias", "rsi2": "Bot RSI2 · comprar caídas",
               "orb": "Bot ORB · ruptura del rango de apertura"}
 ACCOUNT_LABELS = {"mt5": "Cuenta demo GNT (MT5) · horas del servidor GNT",
                   "alpaca": "Cuenta de práctica Alpaca · horas de Nueva York"}
+# Los bots de cripto usan la misma cuenta de Alpaca: el panel la muestra una sola vez.
+ACCOUNT_OF = {"alpaca_crypto": "alpaca"}
+BROKER_SUFFIX = {"alpaca": " · ETF en Alpaca", "alpaca_crypto": " · cripto en Alpaca"}
 PANEL_PATH = Path.home() / ".mt5bot" / "panel.html"
 
 
@@ -115,7 +121,7 @@ def bot_view(gateway, settings):
     bot, strategy = settings.bot, settings.strategy
     title = BOT_TITLES.get(strategy.name, strategy.name)
     return BotView(
-        name=f"{title} · ETF en Alpaca" if bot.broker == "alpaca" else title,
+        name=title + BROKER_SUFFIX.get(bot.broker, ""),
         description=f"{bot.timeframe} · {', '.join(bot.symbols)} · magic {magic} · modo {bot.mode} en el archivo",
         expected=settings.backtest,
         trades=closed_trades(gateway.bot_deals(magic, datetime.now() - timedelta(days=400)), info),
@@ -132,8 +138,9 @@ def write_panel(configs: list[Path]) -> None:
     for path in configs:
         settings = load_settings(path)
         by_broker.setdefault(settings.bot.broker, []).append(settings)
-    accounts, bots = [], []
+    accounts, bots, shown = [], [], set()
     for broker, group in by_broker.items():
+        account = ACCOUNT_OF.get(broker, broker)
         try:
             gateway = connected_gateway(broker)
             try:
@@ -141,9 +148,12 @@ def write_panel(configs: list[Path]) -> None:
                 bots += [bot_view(gateway, settings) for settings in group]
             finally:
                 gateway.shutdown()
-            accounts.append(AccountView(ACCOUNT_LABELS[broker], balance, equity))
+            view = AccountView(ACCOUNT_LABELS[account], balance, equity)
         except Mt5Error as error:
-            accounts.append(AccountView(ACCOUNT_LABELS[broker], None, None, str(error)))
+            view = AccountView(ACCOUNT_LABELS[account], None, None, str(error))
+        if account not in shown:
+            shown.add(account)
+            accounts.append(view)
     if not bots:
         raise Mt5Error("ningún broker respondió: " + "; ".join(a.error for a in accounts))
     PANEL_PATH.write_text(render(bots, accounts, datetime.now()), encoding="utf-8")
@@ -194,7 +204,8 @@ def main() -> None:
 
     panel = commands.add_parser("panel", help="genera el panel HTML de los bots y lo abre en el navegador")
     panel.add_argument("--configs", type=Path, nargs="+",
-                       default=[Path("config/settings.toml"), Path("config/rsi2.toml"), Path("config/alpaca_rsi2.toml")])
+                       default=[Path("config/settings.toml"), Path("config/rsi2.toml"), Path("config/alpaca_rsi2.toml"),
+                                Path("config/alpaca_crypto.toml")])
     panel.add_argument("--no-open", action="store_true", help="solo genera el archivo")
     panel.add_argument("--watch", type=int, metavar="MINUTOS", help="regenera el panel cada MINUTOS hasta que exista STOP")
     panel.set_defaults(func=cmd_panel)

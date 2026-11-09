@@ -84,6 +84,8 @@ def _filled(order) -> bool:
 
 
 class AlpacaGateway:
+    close_time_in_force = TimeInForce.DAY
+
     def __init__(self, trading, data, paper: bool, now=None, fractional: bool = False):
         self.trading, self.data, self.paper, self.fractional = trading, data, paper, fractional
         self._now = now or (lambda: datetime.now(NEW_YORK).replace(tzinfo=None))
@@ -149,15 +151,17 @@ class AlpacaGateway:
         return self._now(), float(last.bid_price), float(last.ask_price)
 
     def positions(self, magic: int, symbol: str | None = None) -> list[BrokerPosition]:
-        held = {p.symbol: p for p in self._call(self.trading.get_all_positions)}
+        # Las posiciones de cripto llegan sin la barra ("BTCUSD") aunque la orden diga "BTC/USD".
+        held = {p.symbol.replace("/", ""): p for p in self._call(self.trading.get_all_positions)}
         entries, closes = self._bot_orders(magic)
         found = []
         for ticket, entry in entries.items():
-            position = held.get(entry.symbol)
+            position = held.get(entry.symbol.replace("/", ""))
             if (symbol and entry.symbol != symbol) or not _filled(entry) or position is None:
                 continue
             exits = closes.get(ticket, [])
-            if self._exit_fills(entry, exits) or abs(float(position.qty)) != float(entry.filled_qty):
+            held_qty = abs(float(position.qty))
+            if self._exit_fills(entry, exits) or not self._same_size(held_qty, float(entry.filled_qty)):
                 continue
             legs, is_buy = entry.legs or [], _value(entry.side) == "buy"
             protective = [*legs, *(o for o in exits if _value(o.type) != "market")]
@@ -165,7 +169,7 @@ class AlpacaGateway:
             stop = next((o for o in active if _value(o.type) in STOP_TYPES), None)
             target = next((o for o in active if _value(o.type) == "limit"), None)
             found.append(BrokerPosition(
-                ticket=ticket, symbol=entry.symbol, volume=float(entry.filled_qty),
+                ticket=ticket, symbol=entry.symbol, volume=held_qty,
                 price_open=float(position.avg_entry_price),
                 sl=float(stop.stop_price) if stop else self._last_stop(protective, is_buy),
                 tp=float(target.limit_price) if target else None,
@@ -176,6 +180,10 @@ class AlpacaGateway:
                 bracket=bool(legs),
             ))
         return found
+
+    @staticmethod
+    def _same_size(held_qty: float, filled_qty: float) -> bool:
+        return held_qty == filled_qty
 
     def positions_without_stop(self, magic: int, symbol: str) -> list[BrokerPosition]:
         """Posiciones fraccionadas cuyo stop DAY ya venció (o nunca se puso) y que no se están cerrando."""
@@ -271,7 +279,7 @@ class AlpacaGateway:
                 self._wait(leg_id, lambda o: _value(o.status) in FINISHED)
         request = MarketOrderRequest(
             symbol=position.symbol, qty=position.volume, side=OrderSide.SELL if position.is_buy else OrderSide.BUY,
-            type=OrderType.MARKET, time_in_force=TimeInForce.DAY,
+            type=OrderType.MARKET, time_in_force=self.close_time_in_force,
             client_order_id=f"{position.magic}-close-{position.ticket}-{int(clock.time() * 1000)}",
         )
         return self._call(self.trading.submit_order, request)

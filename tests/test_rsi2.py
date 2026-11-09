@@ -11,7 +11,7 @@ from mt5bot.config import load_settings
 from mt5bot.core.costs import nights_charged, swap_per_night
 from mt5bot.core.models import SymbolSpec
 from mt5bot.core.position_rules import forced_close_reason
-from mt5bot.core.strategy_rsi2 import exit_due, find_signal
+from mt5bot.core.strategy_rsi2 import bars_needed, exit_due, find_signal
 from mt5bot.engine import Bot
 from mt5bot.io.journal import Journal
 from tests.test_engine import FakeGateway
@@ -131,6 +131,16 @@ def test_sunday_stub_bar_is_ignored(rsi2_settings):
     bars = daily_bars(uptrend_then_dip(240))
     friday_signal = find_signal("US500", bars, rsi2_settings.strategy)
     assert find_signal("US500", with_sunday_stub(bars), rsi2_settings.strategy) == friday_signal
+
+
+def test_weekend_bars_count_when_the_market_trades_all_week(rsi2_settings):
+    closes = uptrend_then_dip(240)
+    times = pd.date_range(end="2025-12-07", periods=len(closes), freq="D")  # termina en domingo
+    bars = daily_bars(closes).assign(time=times)
+    crypto = replace(rsi2_settings.strategy, rsi2=replace(rsi2_settings.strategy.rsi2, weekends=True))
+    assert bars_needed(crypto) < bars_needed(rsi2_settings.strategy)
+    assert find_signal("BTC/USD", bars.tail(bars_needed(crypto)), crypto).bar_time == times[-1]
+    assert find_signal("BTC/USD", bars, rsi2_settings.strategy) is None  # sin la opción, el domingo se descarta
 
 
 def test_friday_signal_is_taken_when_the_market_reopens(rsi2_settings, tmp_path):

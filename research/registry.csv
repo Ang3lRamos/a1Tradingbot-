@@ -66,3 +66,7 @@ fecha,hipotesis,variante,periodo,resultado,p_azar
 2026-11-06T09:41:19,H04 relevo de sesiones,H04b falsa ruptura EURUSD+GBPUSD+USDJPY+AUDUSD+XAUUSD,exploracion,"{""n"": 9292, ""gana_pct"": 7.3, ""avg_r"": -0.652, ""t"": -5.08}",0.3133
 2026-11-06T09:52:28,H05 fade apertura Tokio,H05a fuertes,caja_fuerte_2022_2024,"{""n"": 231, ""gana_pct"": 46.3, ""media_pct"": -0.102, ""t"": -1.57}",0.8248
 2026-11-06T09:52:28,H05 fade apertura Tokio,H05b todos,caja_fuerte_2022_2024,"{""n"": 750, ""gana_pct"": 50.3, ""media_pct"": -0.022, ""t"": -0.72}",0.3117
+2026-11-08T23:15:14,H07 cripto Alpaca,H07 rsi2 D1 compras BTC+ETH+SOL,exploracion_2021_2023,"{""n"": 50, ""gana_pct"": 58.0, ""avg_r"": 0.062, ""t"": 0.46, ""avg_r_sin_comision"": 0.097}",
+2026-11-08T23:15:14,H07 cripto Alpaca,H07 rsi2 D1 compras BTC+ETH+SOL,validacion_2024,"{""n"": 76, ""gana_pct"": 59.2, ""avg_r"": -0.024, ""t"": -0.6, ""avg_r_sin_comision"": 0.014}",
+2026-11-08T23:15:16,H07 cripto Alpaca,H07 donchian D1 compras BTC+ETH+SOL,exploracion_2021_2023,"{""n"": 11, ""gana_pct"": 27.3, ""avg_r"": 0.846, ""t"": 0.86, ""avg_r_sin_comision"": 0.909}",
+2026-11-08T23:15:16,H07 cripto Alpaca,H07 donchian D1 compras BTC+ETH+SOL,validacion_2024,"{""n"": 20, ""gana_pct"": 10.0, ""avg_r"": -0.354, ""t"": -0.74, ""avg_r_sin_comision"": -0.3}",
