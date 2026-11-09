@@ -23,6 +23,7 @@ class BotView:
     open_positions: list[dict]
     events: list[dict]
     status: str
+    magic: int = 0
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,7 @@ def closed_trades(deals: list[dict], positions_info: dict[int, dict]) -> list[di
         pnl = sum(d["money"] for d in group)
         risk = positions_info.get(position, {}).get("risk_money")
         trades.append({
-            "symbol": ins[0]["symbol"], "side": ins[0]["side"],
+            "position": position, "symbol": ins[0]["symbol"], "side": ins[0]["side"],
             "opened": min(d["time"] for d in ins), "closed": max(d["time"] for d in outs),
             "entry": sum(d["price"] * d["volume"] for d in ins) / opened_volume,
             "exit": sum(d["price"] * d["volume"] for d in outs) / closed_volume,

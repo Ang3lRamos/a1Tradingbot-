@@ -93,6 +93,7 @@ ACCOUNT_LABELS = {"mt5": "Cuenta demo GNT (MT5) · horas del servidor GNT",
 ACCOUNT_OF = {"alpaca_crypto": "alpaca"}
 BROKER_SUFFIX = {"alpaca": " · ETF en Alpaca", "alpaca_crypto": " · cripto en Alpaca"}
 PANEL_PATH = Path.home() / ".mt5bot" / "panel.html"
+ALERTS_PATH = Path.home() / ".mt5bot" / "telegram_sent.json"
 
 
 def bot_view(gateway, settings):
@@ -115,7 +116,7 @@ def bot_view(gateway, settings):
         _, bid, ask = gateway.quote(p.symbol)
         now_price, initial = (bid if buy else ask), info.get(p.ticket, {}).get("initial_stop")
         r = (now_price - p.price_open) * (1 if buy else -1) / abs(p.price_open - initial) if initial else None
-        open_positions.append({"symbol": p.symbol, "side": "buy" if buy else "sell", "volume": p.volume,
+        open_positions.append({"ticket": p.ticket, "symbol": p.symbol, "side": "buy" if buy else "sell", "volume": p.volume,
                                "price_open": p.price_open, "price_now": now_price, "sl": p.sl,
                                "profit": p.profit + p.swap, "r": r})
     bot, strategy = settings.bot, settings.strategy
@@ -125,11 +126,11 @@ def bot_view(gateway, settings):
         description=f"{bot.timeframe} · {', '.join(bot.symbols)} · magic {magic} · modo {bot.mode} en el archivo",
         expected=settings.backtest,
         trades=closed_trades(gateway.bot_deals(magic, datetime.now() - timedelta(days=400)), info),
-        open_positions=open_positions, events=events, status=liveness(last_beat, datetime.now()),
+        open_positions=open_positions, events=events, status=liveness(last_beat, datetime.now()), magic=magic,
     )
 
 
-def write_panel(configs: list[Path]) -> None:
+def write_panel(configs: list[Path]) -> list:
     """Un conector por broker. Si uno no responde, el panel sale igual con los bots de los demás."""
     from mt5bot.io.mt5_gateway import Mt5Error
     from mt5bot.report import AccountView, render
@@ -157,10 +158,51 @@ def write_panel(configs: list[Path]) -> None:
     if not bots:
         raise Mt5Error("ningún broker respondió: " + "; ".join(a.error for a in accounts))
     PANEL_PATH.write_text(render(bots, accounts, datetime.now()), encoding="utf-8")
+    return bots
+
+
+def notify_trades(bots: list) -> None:
+    """Avisa por Telegram las operaciones nuevas. La primera vez solo anota las que ya había, sin avisarlas."""
+    from mt5bot.io import telegram
+    from mt5bot.notify import pending_alerts
+
+    token, chat_id = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
+    if not (token and chat_id):
+        return
+    first_time = not ALERTS_PATH.exists()
+    sent = set() if first_time else set(json.loads(ALERTS_PATH.read_text(encoding="utf-8")))
+    try:
+        for key, text in pending_alerts(bots, sent):
+            if not first_time:
+                telegram.send(token, chat_id, text)
+            sent.add(key)
+    finally:
+        # Se guarda aunque un envío falle: los ya enviados no se repiten y el que falló se reintenta luego.
+        ALERTS_PATH.write_text(json.dumps(sorted(sent)), encoding="utf-8")
+
+
+def cmd_telegram(args) -> None:
+    """Prueba la configuración: sin TELEGRAM_CHAT_ID lista los chats que le escribieron al bot; con él, manda un mensaje."""
+    from dotenv import load_dotenv
+
+    from mt5bot.io import telegram
+
+    load_dotenv()
+    token, chat_id = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID")
+    if not token:
+        raise SystemExit("falta TELEGRAM_BOT_TOKEN en .env")
+    if not chat_id:
+        chats = telegram.recent_chats(token)
+        print("\n".join(f"TELEGRAM_CHAT_ID={c}  ({name})" for c, name in chats)
+              or "nadie le ha escrito al bot: mándale un mensaje en Telegram y vuelve a correr esto")
+        return
+    telegram.send(token, chat_id, "mt5bot: los avisos de operaciones quedan activos.")
+    print("mensaje de prueba enviado")
 
 
 def cmd_panel(args) -> None:
     from mt5bot.io.mt5_gateway import Mt5Error
+    from mt5bot.io.telegram import TelegramError
 
     if not args.watch:
         write_panel(args.configs)
@@ -172,9 +214,9 @@ def cmd_panel(args) -> None:
     opened = args.no_open
     while not Path("STOP").exists():
         try:
-            write_panel(args.configs)
-        except Mt5Error as error:
-            logging.getLogger("mt5bot").error("panel: %s", error)  # MT5 cerrado o sin conexión: se reintenta
+            notify_trades(write_panel(args.configs))
+        except (Mt5Error, TelegramError) as error:
+            logging.getLogger("mt5bot").error("panel: %s", error)  # sin conexión: se reintenta en la próxima vuelta
         if not opened and PANEL_PATH.exists():
             os.startfile(PANEL_PATH)
             opened = True
@@ -209,6 +251,9 @@ def main() -> None:
     panel.add_argument("--no-open", action="store_true", help="solo genera el archivo")
     panel.add_argument("--watch", type=int, metavar="MINUTOS", help="regenera el panel cada MINUTOS hasta que exista STOP")
     panel.set_defaults(func=cmd_panel)
+
+    telegram = commands.add_parser("telegram", help="prueba los avisos por Telegram (o muestra el chat id)")
+    telegram.set_defaults(func=cmd_telegram)
 
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
