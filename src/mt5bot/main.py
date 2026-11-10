@@ -213,7 +213,7 @@ def cmd_telegram(args) -> None:
         print("\n".join(f"TELEGRAM_CHAT_ID={c}  ({name})" for c, name in chats)
               or "nadie le ha escrito al bot: mándale un mensaje en Telegram y vuelve a correr esto")
         return
-    telegram.send(token, chat_id, "mt5bot: los avisos de operaciones quedan activos.")
+    telegram.send(token, chat_id, "✅ <b>mt5bot</b>\nLos avisos por Telegram quedan activos.")
     print("mensaje de prueba enviado")
 
 

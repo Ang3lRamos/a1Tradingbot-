@@ -26,7 +26,9 @@ def _call(token: str, method: str, params: dict) -> dict:
 
 
 def send(token: str, chat_id: str, text: str) -> None:
-    _call(token, "sendMessage", {"chat_id": chat_id, "text": text})
+    """`text` va en HTML de Telegram (<b>, <i>, <code>): lo que venga de afuera debe ir escapado."""
+    _call(token, "sendMessage", {"chat_id": chat_id, "text": text, "parse_mode": "HTML",
+                                 "disable_web_page_preview": "true"})
 
 
 def recent_chats(token: str) -> list[tuple[int, str]]:

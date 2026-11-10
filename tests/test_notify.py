@@ -27,16 +27,23 @@ def bot(open_positions=(), trades=(), events=(), last_beat=NOW):
 def test_new_open_and_closed_trades_are_alerted_once():
     messages, state = pending_alerts([bot([OPEN], [CLOSED])], [], AlertState(), NOW)
     assert len(messages) == 2
-    assert "Compra BTC/USD" in messages[0] and "stop 68,000.00" in messages[0]
-    assert "+629.45 USD (+1.27 R)" in messages[1]
+    assert "<b>Compra BTC/USD</b>" in messages[0] and "Stop: 68,000.00 (-8.48 %)" in messages[0]
+    assert "Ganancia +629.45 USD · +1.27 R</b>" in messages[1]
+    assert "Entrada 1.40710 → salida 1.41330 (+0.44 %)" in messages[1] and "Duración: 12 h 0 min" in messages[1]
     assert pending_alerts([bot([OPEN], [CLOSED])], [], state, NOW)[0] == []
 
 
 def test_new_errors_are_grouped_in_one_message():
     older = {**ERROR, "logged_at": "2026-11-09T06:30:00"}
     [message], state = pending_alerts([bot(events=[ERROR, older])], [], AlertState(), NOW)
-    assert "2 error(es)" in message and "06:36" in message and "Connection aborted" in message
+    assert "2 errores" in message and "06:36 BTC/USD" in message and "Connection aborted" in message
     assert pending_alerts([bot(events=[ERROR, older])], [], state, NOW)[0] == []
+
+
+def test_outside_text_is_escaped_for_telegram_html():
+    bad = {**ERROR, "detail": {"message": "status <500> & retry"}}
+    [message], _ = pending_alerts([bot(events=[bad])], [], AlertState(), NOW)
+    assert "status &lt;500&gt; &amp; retry" in message
 
 
 def test_silent_bot_is_alerted_once_and_again_when_it_comes_back():
