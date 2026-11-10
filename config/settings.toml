@@ -50,7 +50,7 @@ max_trades_per_day = 3
 max_open_positions = 2
 max_spread_points = 20
 min_reward_risk = 1.0
-trading_hours = ["08:00", "16:00"]
+trading_hours = ["08:00", "15:59"]   # el final cuenta: con 16:00 el backtest entraba a las 16:00:00 y el bot (segundos después) no
 friday_close = "20:00"         # el viernes desde esta hora no se entra y se cierra todo; "" lo desactiva
 
 [backtest]
@@ -59,7 +59,7 @@ spread_points = 2              # piso; se usa el spread de la vela si es mayor
 commission_per_lot = 10.0      # ida y vuelta, en moneda de la cuenta (medido en GNT demo)
 monte_carlo_runs = 10000
 seed = 19
-# Backtest con costos y swap (2025-04 a 2026-11, 744 ops): referencia del panel.
-expected_win_rate_pct = 41.0
-expected_avg_r = -0.038
-expected_trades_per_month = 40
+# Backtest con costos y swap (2025-04 a 2026-11, 516 ops, entradas 08:00 y 12:00): referencia del panel.
+expected_win_rate_pct = 41.1
+expected_avg_r = -0.035
+expected_trades_per_month = 28

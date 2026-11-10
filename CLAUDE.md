@@ -139,8 +139,8 @@ el número de pruebas (`required_p`). Cada familia de hipótesis va en su propio
 - Probado contra MT5 real en Windows (broker GNT Capital, demo `GNTCapital-Demo`, USD 100.000). Los símbolos llevan
   sufijo `.z`. Comisión medida: USD 10 por lote ida y vuelta. El broker da historia solo desde 2025-01-09.
 - ORB en EURUSD.z M15 pierde (PF 0.72 con costos). El EA de retroceso de Angel (TrendPullbackEA) pierde incluso sin costos.
-- Estrategia activa: `donchian` H4 en 11 símbolos. Backtest con costos: -0.10R/op en 2025, +0.08R/op en 2026, ~0 en total
-  (744 ops). NO tiene ventaja probada; está en prueba en demo desde 2026-11-06 (`mt5bot run --mode live`).
+- Estrategia activa: `donchian` H4 en 11 símbolos. Backtest con costos: -0.17R/op en 2025, +0.10R/op en 2026, -0.035R en total
+  (516 ops, solo entradas 08:00 y 12:00 por `trading_hours`). NO tiene ventaja probada; está en prueba en demo desde 2026-11-06 (`mt5bot run --mode live`).
 - Con balance 1000 el lote mínimo no cabe en el 0.5% de riesgo con stops de 2 ATR en H4: cuenta pequeña no sirve para D.
 
 ## Pendiente / ideas acordadas
