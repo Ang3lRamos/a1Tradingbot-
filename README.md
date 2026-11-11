@@ -85,3 +85,22 @@ pytest
 ```
 
 Horas: todas las horas de la configuración son hora del servidor del broker (la que muestra MT5).
+
+## Interfaz web (`web/`)
+
+Sitio estático (Vite + React) que explica el bot y deja probar sus reglas: los cuatro bots en demo, el flujo de cada
+vela, un simulador del filtro de riesgo y del cálculo de lotes (réplica de `core/risk.py` y `core/sizing.py` con los
+límites de `config/settings.toml`), el laboratorio con todas las pruebas de `research/registry.csv` y los resultados
+de los backtests.
+
+```bash
+cd web
+npm install
+npm run dev            # http://localhost:5173
+npm run build          # genera web/dist
+```
+
+Después de anotar pruebas nuevas en el registro: `python web/scripts/registry_to_json.py` (actualiza
+`web/src/research/registry.json`). Si cambian las reglas de riesgo, actualizar también `web/src/lib/rules.ts`.
+
+**Vercel:** importar el repo y elegir `web` como *Root Directory*; detecta Vite solo.
