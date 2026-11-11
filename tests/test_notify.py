@@ -36,8 +36,24 @@ def test_new_open_and_closed_trades_are_alerted_once():
 def test_new_errors_are_grouped_in_one_message():
     older = {**ERROR, "logged_at": "2026-11-09T06:30:00"}
     [message], state = pending_alerts([bot(events=[ERROR, older])], [], AlertState(), NOW)
-    assert "2 errores" in message and "06:36 BTC/USD" in message and "Connection aborted" in message
+    assert "2 errores · 06:30–06:36" in message
     assert pending_alerts([bot(events=[ERROR, older])], [], state, NOW)[0] == []
+
+
+def test_network_errors_are_explained_by_cause_with_their_symbols():
+    dns = {**ERROR, "logged_at": "2026-11-11T11:42:45", "symbol": "QQQ",
+           "detail": {"message": "Max retries exceeded (Caused by NameResolutionError(\"Failed to resolve\"))"}}
+    cut = {**ERROR, "logged_at": "2026-11-11T11:42:44", "symbol": "SPY"}
+    [message], _ = pending_alerts([bot(events=[dns, cut])], [], AlertState(), NOW)
+    assert "<b>Sin internet</b> · QQQ" in message and "<b>Conexión cortada</b> · SPY" in message
+    assert "No hace falta hacer nada" in message and "<code>" not in message
+
+
+def test_unknown_errors_keep_the_technical_detail_and_no_reassurance():
+    odd = {**ERROR, "detail": {"message": "orden rechazada: saldo insuficiente"}}
+    [message], _ = pending_alerts([bot(events=[odd])], [], AlertState(), NOW)
+    assert "Error no reconocido" in message and "saldo insuficiente" in message
+    assert "No hace falta hacer nada" not in message
 
 
 def test_outside_text_is_escaped_for_telegram_html():
@@ -62,7 +78,7 @@ def test_liveness_is_not_judged_while_the_watcher_starts():
 
 def test_broker_down_and_back():
     [message], state = pending_alerts([], [ALPACA_DOWN], AlertState(), NOW)
-    assert "Broker sin respuesta" in message and "Read timed out" in message
+    assert "Broker sin respuesta" in message and "no respondió a tiempo" in message and "Read timed out" in message
     assert pending_alerts([], [ALPACA_DOWN], state, NOW)[0] == []
     [message], state = pending_alerts([], [ALPACA_OK], state, NOW)
     assert "Broker de vuelta" in message and state.brokers_down == set()

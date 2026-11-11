@@ -72,23 +72,67 @@ def trade_alerts(bot: BotView, sent: set[str]) -> list[tuple[str, str]]:
             + [(k, close_message(bot, t)) for k, t in closes if k not in sent])
 
 
-def _error_line(event: dict) -> str:
-    message = str(event["detail"].get("message", event["detail"]))
-    if len(message) > ERROR_CHARS:
-        message = message[:ERROR_CHARS] + "…"
-    return f"• {event['logged_at'][11:16]} {escape(event['symbol'] or 'general')}: <code>{escape(message)}</code>"
+@dataclass(frozen=True)
+class Cause:
+    icon: str
+    title: str
+    explanation: str
+    transient: bool  # de red: el bot reintenta solo en la siguiente vuelta
+
+
+# Los errores llegan como texto de las librerías (requests, alpaca, MT5); se reconocen por fragmentos conocidos.
+CAUSES = [
+    (("nameresolutionerror", "failed to resolve", "getaddrinfo"),
+     Cause("📶", "Sin internet", "El PC no encontró la dirección del broker. Casi siempre es el Wi-Fi que se cayó "
+           "un momento.", True)),
+    (("remotedisconnected", "connection aborted", "connection reset", "connectionreseterror"),
+     Cause("🔌", "Conexión cortada", "La conexión con el broker se cortó a mitad de una consulta (red inestable o "
+           "el broker la cerró).", True)),
+    (("timed out", "timeout"),
+     Cause("⏳", "El broker no respondió a tiempo", "La consulta tardó demasiado y se canceló.", True)),
+    (("too many requests", "rate limit"),
+     Cause("🚦", "Demasiadas consultas", "El broker frenó al bot por consultar muy seguido.", True)),
+    (("unauthorized", "not authorized", "forbidden"),
+     Cause("🔑", "Acceso rechazado", "El broker no aceptó las llaves: revisa el .env o si la cuenta sigue activa.",
+           False)),
+]
+UNKNOWN = Cause("❓", "Error no reconocido", "Mira el detalle técnico abajo o el panel.", False)
+
+
+def _cause(message: str) -> Cause:
+    text = message.lower()
+    return next((cause for fragments, cause in CAUSES if any(f in text for f in fragments)), UNKNOWN)
+
+
+def _message(event: dict) -> str:
+    return str(event["detail"].get("message", event["detail"]))
+
+
+def _cause_block(cause: Cause, events: list[dict]) -> str:
+    symbols = ", ".join(dict.fromkeys(escape(e["symbol"] or "general") for e in events))
+    block = f"{cause.icon} <b>{cause.title}</b> · {symbols}\n{cause.explanation}"
+    if cause is UNKNOWN:
+        details = [_message(e)[:ERROR_CHARS] for e in events[:ERRORS_SHOWN]]
+        block += "".join(f"\n<code>{escape(d)}</code>" for d in dict.fromkeys(details))
+    return block
 
 
 def error_alert(bot: BotView, sent: set[str]) -> tuple[list[str], str | None]:
-    """Errores nuevos de la bitácora del bot, juntos en un solo mensaje (pueden ser varios por vuelta)."""
+    """Errores nuevos de la bitácora del bot en un solo mensaje, agrupados por causa y explicados en palabras."""
     new = [e for e in bot.events if e["kind"] == "error" and f"{bot.magic}-error-{e['logged_at']}" not in sent]
     if not new:
         return [], None
-    lines = [_error_line(e) for e in new[:ERRORS_SHOWN]]  # los eventos vienen del más reciente al más viejo
-    if len(new) > ERRORS_SHOWN:
-        lines.append(f"… y {len(new) - ERRORS_SHOWN} más (ver panel)")
-    title = f"{len(new)} error{'es' if len(new) > 1 else ''}"
-    return [f"{bot.magic}-error-{e['logged_at']}" for e in new], _header("⚠️", title, bot.name) + "\n".join(lines)
+    by_cause: dict[Cause, list[dict]] = {}
+    for event in new:
+        by_cause.setdefault(_cause(_message(event)), []).append(event)
+    times = sorted(e["logged_at"][11:16] for e in new)  # los eventos vienen del más reciente al más viejo
+    when = times[0] if times[0] == times[-1] else f"{times[0]}–{times[-1]}"
+    title = f"{len(new)} error{'es' if len(new) > 1 else ''} · {when}"
+    blocks = [_cause_block(cause, events) for cause, events in by_cause.items()]
+    if all(cause.transient for cause in by_cause):
+        blocks.append("No hace falta hacer nada: el bot reintenta solo en la siguiente vuelta. "
+                      "Si la falla sigue, te llega «Broker sin respuesta».")
+    return [f"{bot.magic}-error-{e['logged_at']}" for e in new], _header("⚠️", title, bot.name) + "\n\n".join(blocks)
 
 
 def liveness_alert(bot: BotView, down: set[str], now: datetime) -> tuple[bool, str | None]:
@@ -107,7 +151,10 @@ def liveness_alert(bot: BotView, down: set[str], now: datetime) -> tuple[bool, s
 def broker_alert(account: AccountView, brokers_down: set[str]) -> str | None:
     was_down = account.label in brokers_down
     if account.error and not was_down:
-        return f"📡 <b>Broker sin respuesta</b> · {escape(account.label)}\n\n<code>{escape(account.error)}</code>"
+        cause = _cause(account.error)
+        return (f"📡 <b>Broker sin respuesta</b> · {escape(account.label)}\n\n"
+                f"{cause.icon} <b>{cause.title}</b>\n{cause.explanation}\n"
+                f"<code>{escape(account.error[:ERROR_CHARS])}</code>")
     if was_down and not account.error:
         return f"💚 <b>Broker de vuelta</b> · {escape(account.label)}"
     return None

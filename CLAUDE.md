@@ -95,7 +95,7 @@ cartera (posiciones abiertas entre símbolos).
 
 ```bash
 pip install -e ".[mt5,dev,alpaca]"  # en Windows; en Linux/Mac sin [mt5]
-pytest -p no:cacheprovider     # 102 tests, corren sin MT5 ni Alpaca (FakeGateway en tests/test_engine.py)
+pytest -p no:cacheprovider     # 104 tests, corren sin MT5 ni Alpaca (FakeGateway en tests/test_engine.py)
 mt5bot download --symbol EURUSD.z --timeframe H4 --days 730
 mt5bot backtest --csv data/EURUSD.z_H4.csv --spec data/EURUSD.z_spec.json
 mt5bot run                      # respeta bot.mode (dry_run por defecto)
